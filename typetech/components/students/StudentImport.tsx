@@ -16,7 +16,7 @@ interface Cohort {
 export function StudentImport() {
   const [pastedData, setPastedData] = useState('')
   const [parsedStudents, setParsedStudents] = useState<Array<{ name: string; email: string }>>([])
-  const [selectedCohort, setSelectedCohort] = useState<string>('')
+  const [selectedCohort, setSelectedCohort] = useState<string>('cohort-placeholder')
   const [cohorts, setCohorts] = useState<Cohort[]>([])
   const { importStudents, loading } = useStudents()
 
@@ -37,7 +37,6 @@ export function StudentImport() {
       const lines = pastedData.trim().split('\n')
       const students = lines
         .map(line => {
-          // Handle tab-separated or comma-separated
           const parts = line.includes('\t') ? line.split('\t') : line.split(',')
           if (parts.length >= 2) {
             return {
@@ -62,22 +61,32 @@ export function StudentImport() {
   }
 
   const handleImport = async () => {
-    if (parsedStudents.length === 0) return
+    if (parsedStudents.length === 0) {
+      toast.error('No students to import')
+      return
+    }
+
+    if (!selectedCohort || selectedCohort === 'cohort-placeholder') {
+      toast.error('Please select a cohort before importing')
+      return
+    }
     
     const names = parsedStudents.map(s => s.name)
     const emails = parsedStudents.map(s => s.email)
     
-    await importStudents(names, emails, selectedCohort || undefined)
+    await importStudents(names, emails, selectedCohort)
     setPastedData('')
     setParsedStudents([])
-    setSelectedCohort('')
+    setSelectedCohort('cohort-placeholder')
   }
 
   const clearAll = () => {
     setPastedData('')
     setParsedStudents([])
-    setSelectedCohort('')
+    setSelectedCohort('cohort-placeholder')
   }
+
+  const isImportDisabled = !selectedCohort || selectedCohort === 'cohort-placeholder' || parsedStudents.length === 0
 
   return (
     <div className="bg-white rounded-lg p-6">
@@ -86,19 +95,22 @@ export function StudentImport() {
       <div className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Select Cohort
+            Select Cohort <span className="text-red-500">*</span>
           </label>
           <Select
             value={selectedCohort}
             onValueChange={setSelectedCohort}
           >
-            <SelectItem value="">No Cohort</SelectItem>
+            <SelectItem value="cohort-placeholder">Select a cohort</SelectItem>
             {cohorts.map((cohort) => (
               <SelectItem key={cohort.id} value={cohort.id}>
                 {cohort.name}
               </SelectItem>
             ))}
           </Select>
+          {(!selectedCohort || selectedCohort === 'cohort-placeholder') && (
+            <p className="text-xs text-red-500 mt-1">Cohort is required</p>
+          )}
         </div>
 
         <div>
@@ -115,7 +127,7 @@ export function StudentImport() {
         </div>
 
         <div className="flex gap-2">
-          <Button onClick={parsePastedData} variant="outline">
+          <Button onClick={parsePastedData} variant="outline" disabled={!pastedData}>
             <Upload size={16} className="mr-2" />
             Parse Data
           </Button>
@@ -154,9 +166,16 @@ export function StudentImport() {
             </table>
             
             <div className="p-4 bg-gray-50 border-t">
-              <Button onClick={handleImport} disabled={loading || !selectedCohort}>
-                Import {parsedStudents.length} Students to {cohorts.find(c => c.id === selectedCohort)?.name || 'cohort'}
+              <Button 
+                onClick={handleImport} 
+                disabled={loading || isImportDisabled}
+                className={isImportDisabled ? 'opacity-50 cursor-not-allowed' : ''}
+              >
+                Import {parsedStudents.length} Students
               </Button>
+              {isImportDisabled && (
+                <p className="text-xs text-red-500 mt-2">Select a cohort to enable import</p>
+              )}
             </div>
           </div>
         )}

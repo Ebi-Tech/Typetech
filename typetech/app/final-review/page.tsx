@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useStudents } from '@/hooks/useStudents'
-import { useAttendance } from '@/hooks/useAttendance'
+import { CohortSelector } from '@/components/cohorts/CohortSelector'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
-import { Select, SelectItem } from '@/components/ui/Select'
+import { Select } from '@/components/ui/Select'
 import { Badge } from '@/components/ui/Badge'
 import { Filter, CheckCircle, XCircle, Clock, Save } from 'lucide-react'
 import { Student, FinalStatus } from '@/types/database'
@@ -14,30 +14,32 @@ import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
 
 export default function FinalReviewPage() {
-  const { students, updateStudent } = useStudents()
+  const { students, refresh } = useStudents()
   const [filter, setFilter] = useState<string>('all')
+  const [selectedCohort, setSelectedCohort] = useState<string | null>(null)
+  const [cohorts, setCohorts] = useState<Array<{ id: string; name: string }>>([])
   const [editingWPM, setEditingWPM] = useState<Record<string, number>>({})
   const [saving, setSaving] = useState<Record<string, boolean>>({})
 
-  // Get attendance summaries for all weeks
-  const attendanceSummaries = useMemo(() => {
-    if (!students) return {}
-    
-    return students.reduce((acc, student) => {
-      // This would ideally come from a hook, but for now we'll simulate
-      acc[student.id] = {
-        totalPresent: Math.floor(Math.random() * 11), // Replace with actual data
-        totalLate: Math.floor(Math.random() * 3),
-        totalAbsent: Math.floor(Math.random() * 2)
-      }
-      return acc
-    }, {} as Record<string, { totalPresent: number; totalLate: number; totalAbsent: number }>)
-  }, [students])
+  // Fetch cohorts
+  const fetchCohorts = async () => {
+    const { data } = await supabase.from('cohorts').select('*').order('name')
+    setCohorts(data || [])
+  }
+
+  useEffect(() => {
+    fetchCohorts()
+  }, [])
+
+  // Filter students by cohort
+  const cohortFilteredStudents = selectedCohort
+    ? students?.filter(s => s.cohort_id === selectedCohort)
+    : students
 
   const filteredStudents = useMemo(() => {
-    if (!students) return []
+    if (!cohortFilteredStudents) return []
     
-    return students.filter(student => {
+    return cohortFilteredStudents.filter(student => {
       if (filter === 'all') return true
       if (filter === 'homerow') return student.typing_style === 'Homerow'
       if (filter === 'hunting') return student.typing_style === 'Hunting'
@@ -47,7 +49,7 @@ export default function FinalReviewPage() {
       if (filter === 'fail') return student.final_status === 'Fail'
       return true
     })
-  }, [students, filter])
+  }, [cohortFilteredStudents, filter])
 
   const handleWPMChange = (studentId: string, value: string) => {
     const wpm = parseInt(value)
@@ -75,7 +77,7 @@ export default function FinalReviewPage() {
         return newState
       })
       
-      // Optionally, you can call updateStudent here if you want to refetch or update state
+      await refresh()
       toast.success('WPM updated')
     } catch (error) {
       toast.error('Failed to update WPM')
@@ -93,7 +95,7 @@ export default function FinalReviewPage() {
 
       if (error) throw error
       
-      // Optionally, you can call updateStudent here if you want to refetch or update state
+      await refresh()
       toast.success(`Status updated to ${status}`)
     } catch (error) {
       toast.error('Failed to update status')
@@ -112,26 +114,30 @@ export default function FinalReviewPage() {
     await handleStatusChange(student.id, suggestion as FinalStatus)
   }
 
-  const getAttendanceRate = (studentId: string) => {
-    const summary = attendanceSummaries[studentId]
-    if (!summary) return 0
-    return ((summary.totalPresent + summary.totalLate * 0.5) / 11 * 100).toFixed(1)
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Final Review</h1>
+      </div>
+
+      {/* Filters */}
+      <div className="flex items-center gap-4">
+        <CohortSelector 
+          selectedCohort={selectedCohort}
+          onCohortChange={setSelectedCohort}
+          cohorts={cohorts}
+          onCohortCreated={fetchCohorts}
+        />
         <div className="flex items-center gap-2">
           <Filter size={20} className="text-gray-500" />
           <Select value={filter} onValueChange={setFilter}>
-            <SelectItem value="all">All Students</SelectItem>
-            <SelectItem value="homerow">Homerow Only</SelectItem>
-            <SelectItem value="hunting">Hunting Only</SelectItem>
-            <SelectItem value="pending">Pending Review</SelectItem>
-            <SelectItem value="complete">Complete</SelectItem>
-            <SelectItem value="pass">Pass</SelectItem>
-            <SelectItem value="fail">Fail</SelectItem>
+            <option value="all">All Students</option>
+            <option value="homerow">Homerow Only</option>
+            <option value="hunting">Hunting Only</option>
+            <option value="pending">Pending Review</option>
+            <option value="complete">Complete</option>
+            <option value="pass">Pass</option>
+            <option value="fail">Fail</option>
           </Select>
         </div>
       </div>
@@ -143,7 +149,7 @@ export default function FinalReviewPage() {
             <div>
               <p className="text-sm text-gray-600">Ready for Certificate</p>
               <p className="text-2xl font-bold text-green-600">
-                {students?.filter(s => s.final_status === 'Complete').length || 0}
+                {filteredStudents?.filter(s => s.final_status === 'Complete').length || 0}
               </p>
             </div>
             <CheckCircle className="text-green-500" size={24} />
@@ -155,7 +161,7 @@ export default function FinalReviewPage() {
             <div>
               <p className="text-sm text-gray-600">Pass (No Curriculum)</p>
               <p className="text-2xl font-bold text-yellow-600">
-                {students?.filter(s => s.final_status === 'Pass').length || 0}
+                {filteredStudents?.filter(s => s.final_status === 'Pass').length || 0}
               </p>
             </div>
             <Clock className="text-yellow-500" size={24} />
@@ -167,7 +173,7 @@ export default function FinalReviewPage() {
             <div>
               <p className="text-sm text-gray-600">Pending Review</p>
               <p className="text-2xl font-bold text-blue-600">
-                {students?.filter(s => s.final_status === 'Pending').length || 0}
+                {filteredStudents?.filter(s => s.final_status === 'Pending').length || 0}
               </p>
             </div>
             <Clock className="text-blue-500" size={24} />
@@ -179,7 +185,7 @@ export default function FinalReviewPage() {
             <div>
               <p className="text-sm text-gray-600">Failed</p>
               <p className="text-2xl font-bold text-red-600">
-                {students?.filter(s => s.final_status === 'Fail').length || 0}
+                {filteredStudents?.filter(s => s.final_status === 'Fail').length || 0}
               </p>
             </div>
             <XCircle className="text-red-500" size={24} />
@@ -194,8 +200,8 @@ export default function FinalReviewPage() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Student</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cohort</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Style</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Attendance</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">WPM</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Curriculum</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Suggested</th>
@@ -204,9 +210,9 @@ export default function FinalReviewPage() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredStudents.map((student) => {
+              {filteredStudents?.map((student) => {
                 const suggestion = getStatusSuggestion(student)
-                const attendanceRate = getAttendanceRate(student.id)
+                const cohort = cohorts.find(c => c.id === student.cohort_id)
                 
                 return (
                   <tr key={student.id} className="hover:bg-gray-50">
@@ -218,20 +224,13 @@ export default function FinalReviewPage() {
                     </td>
                     
                     <td className="px-4 py-3">
-                      <Badge variant={student.typing_style === 'Homerow' ? 'success' : 'warning'}>
-                        {student.typing_style || 'Not set'}
-                      </Badge>
+                      <Badge variant="secondary">{cohort?.name || '—'}</Badge>
                     </td>
                     
                     <td className="px-4 py-3">
-                      <div className="text-sm">
-                        <span className="font-medium">{attendanceRate}%</span>
-                        <span className="text-gray-500 text-xs block">
-                          {attendanceSummaries[student.id]?.totalPresent || 0}P / 
-                          {attendanceSummaries[student.id]?.totalLate || 0}L / 
-                          {attendanceSummaries[student.id]?.totalAbsent || 0}A
-                        </span>
-                      </div>
+                      <Badge variant={student.typing_style === 'Homerow' ? 'success' : 'warning'}>
+                        {student.typing_style || 'Not set'}
+                      </Badge>
                     </td>
                     
                     <td className="px-4 py-3">
@@ -277,10 +276,10 @@ export default function FinalReviewPage() {
                         value={student.final_status}
                         onValueChange={(value) => handleStatusChange(student.id, value as FinalStatus)}
                       >
-                        <SelectItem value="Pending">Pending</SelectItem>
-                        <SelectItem value="Complete">Complete</SelectItem>
-                        <SelectItem value="Pass">Pass</SelectItem>
-                        <SelectItem value="Fail">Fail</SelectItem>
+                        <option value="Pending">Pending</option>
+                        <option value="Complete">Complete</option>
+                        <option value="Pass">Pass</option>
+                        <option value="Fail">Fail</option>
                       </Select>
                     </td>
                     

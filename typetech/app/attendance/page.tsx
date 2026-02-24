@@ -6,18 +6,33 @@ import { CohortSelector } from '@/components/cohorts/CohortSelector'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Select, SelectItem } from '@/components/ui/Select'
-import { ChevronLeft, ChevronRight, Save, AlertCircle } from 'lucide-react'
-import { AttendanceStatus } from '@/types/database'
+import { ChevronLeft, ChevronRight, Save, Cloud, CheckCircle2 } from 'lucide-react'
+import { AttendanceStatus, FinalStatus } from '@/types/database'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
 
 export default function AttendancePage() {
   const [currentWeek, setCurrentWeek] = useState(1)
   const [attendanceData, setAttendanceData] = useState<Record<string, AttendanceStatus>>({})
+  const [gradeData, setGradeData] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
   const [selectedCohort, setSelectedCohort] = useState<string | null>(null)
+  const [cohorts, setCohorts] = useState<unknown[]>([])
+  const [syncMessage, setSyncMessage] = useState<string | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const [lastSync, setLastSync] = useState<Date | null>(null)
   
-  const { students, loading: studentsLoading } = useStudents()
+  const { students, loading: studentsLoading, updateStudent } = useStudents()
+
+  // Fetch cohorts
+  const fetchCohorts = async () => {
+    const { data } = await supabase.from('cohorts').select('*').order('name')
+    setCohorts(data || [])
+  }
+
+  useEffect(() => {
+    fetchCohorts()
+  }, [])
 
   // Filter students by cohort
   const filteredStudents = selectedCohort
@@ -46,22 +61,115 @@ export default function AttendancePage() {
     fetchAttendance()
   }, [currentWeek, filteredStudents])
 
-  const handleStatusChange = (studentId: string, status: AttendanceStatus) => {
+  // Load grade data from students
+  useEffect(() => {
+    if (filteredStudents) {
+      const gradeMap: Record<string, string> = {}
+      filteredStudents.forEach(student => {
+        gradeMap[student.id] = student.final_status || 'grade-placeholder'
+      })
+      setGradeData(gradeMap)
+    }
+  }, [filteredStudents])
+
+  const saveAttendance = async (studentId: string, weekNumber: number, status: AttendanceStatus) => {
+    try {
+      const { data: existing } = await supabase
+        .from('attendance')
+        .select('id')
+        .eq('student_id', studentId)
+        .eq('week_number', weekNumber)
+        .single()
+
+      if (existing) {
+        await supabase
+          .from('attendance')
+          .update({ status })
+          .eq('id', existing.id)
+      } else {
+        await supabase
+          .from('attendance')
+          .insert([{
+            student_id: studentId,
+            week_number: weekNumber,
+            status
+          }])
+      }
+      return true
+    } catch (error) {
+      console.error('Auto-save failed:', error)
+      return false
+    }
+  }
+
+  const handleStatusChange = async (studentId: string, value: string) => {
+    if (value === 'status-placeholder') return
+    
+    const status = value as AttendanceStatus
     setAttendanceData(prev => ({
       ...prev,
       [studentId]: status
     }))
+    
+    // Show saving message
+    setSyncMessage('Saving...')
+    setSyncing(true)
+    
+    // Save to database
+    const success = await saveAttendance(studentId, currentWeek, status)
+    
+    setSyncing(false)
+    if (success) {
+      setLastSync(new Date())
+      setSyncMessage(null)
+      toast.success('✓ Synced', {
+        duration: 2000,
+        position: 'top-center',
+        icon: '🔄',
+        style: {
+          background: '#10b981',
+          color: 'white',
+          fontSize: '14px',
+          padding: '8px 16px',
+        },
+      })
+    } else {
+      toast.error('Failed to save')
+    }
   }
 
-  const handleSave = async () => {
+  const handleGradeChange = async (studentId: string, value: string) => {
+    if (value === 'grade-placeholder') return
+    
+    setGradeData(prev => ({
+      ...prev,
+      [studentId]: value
+    }))
+    
+    try {
+      await updateStudent(studentId, { final_status: value as FinalStatus })
+      toast.success('Grade updated', {
+        duration: 2000,
+        icon: '✓',
+        style: {
+          background: '#10b981',
+          color: 'white',
+        },
+      })
+    } catch (error) {
+      toast.error('Failed to update grade')
+    }
+  }
+
+  const handleManualSave = async () => {
     if (!filteredStudents) return
     
     setSaving(true)
     try {
       const promises = filteredStudents.map(async (student) => {
-        const status = attendanceData[student.id] || 'Present'
+        const status = attendanceData[student.id]
+        if (!status) return
         
-        // Check if record exists
         const { data: existing } = await supabase
           .from('attendance')
           .select('id')
@@ -70,13 +178,11 @@ export default function AttendancePage() {
           .single()
 
         if (existing) {
-          // Update
           return supabase
             .from('attendance')
             .update({ status })
             .eq('id', existing.id)
         } else {
-          // Insert
           return supabase
             .from('attendance')
             .insert([{
@@ -89,6 +195,7 @@ export default function AttendancePage() {
 
       await Promise.all(promises)
       toast.success(`Week ${currentWeek} attendance saved!`)
+      setLastSync(new Date())
     } catch (error) {
       toast.error('Failed to save attendance')
     } finally {
@@ -100,7 +207,7 @@ export default function AttendancePage() {
     if (!filteredStudents) return { present: 0, late: 0, absent: 0, total: 0 }
     
     const summary = filteredStudents.reduce((acc, student) => {
-      const status = attendanceData[student.id] || 'Present'
+      const status = attendanceData[student.id]
       if (status === 'Present') acc.present++
       else if (status === 'Late') acc.late++
       else if (status === 'Absent') acc.absent++
@@ -122,6 +229,25 @@ export default function AttendancePage() {
 
   return (
     <div className="space-y-6">
+      {/* Sync Status Indicator */}
+      {syncing && (
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50">
+          <div className="bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2">
+            <Cloud size={16} className="animate-pulse" />
+            <span className="text-sm font-medium">Saving...</span>
+          </div>
+        </div>
+      )}
+
+      {lastSync && !syncing && (
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50">
+          <div className="bg-green-500 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2">
+            <CheckCircle2 size={16} />
+            <span className="text-sm font-medium">All changes saved</span>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Attendance Tracking</h1>
@@ -140,9 +266,9 @@ export default function AttendancePage() {
           >
             <ChevronRight size={16} />
           </Button>
-          <Button onClick={handleSave} disabled={saving}>
+          <Button onClick={handleManualSave} disabled={saving}>
             <Save size={16} className="mr-2" />
-            {saving ? 'Saving...' : 'Save Week'}
+            {saving ? 'Saving...' : 'Save All'}
           </Button>
         </div>
       </div>
@@ -152,6 +278,8 @@ export default function AttendancePage() {
         <CohortSelector 
           selectedCohort={selectedCohort}
           onCohortChange={setSelectedCohort}
+          cohorts={cohorts}
+          onCohortCreated={fetchCohorts}
         />
       </div>
 
@@ -219,7 +347,10 @@ export default function AttendancePage() {
                   Email
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Current Style
+                  Typing Style
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Grade (Pass/Fail/Complete)
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Attendance Status
@@ -236,21 +367,27 @@ export default function AttendancePage() {
                     {student.email}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    {student.typing_style && (
-                      <span className={`px-2 py-1 rounded-full text-xs ${
-                        student.typing_style === 'Homerow' 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-orange-100 text-orange-800'
-                      }`}>
-                        {student.typing_style}
-                      </span>
-                    )}
+                    <span className="text-gray-600">
+                      {student.typing_style || '—'}
+                    </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <Select
-                      value={attendanceData[student.id] || 'Present'}
-                      onValueChange={(value) => handleStatusChange(student.id, value as AttendanceStatus)}
+                      value={gradeData[student.id] || 'grade-placeholder'}
+                      onValueChange={(value) => handleGradeChange(student.id, value)}
                     >
+                      <SelectItem value="grade-placeholder">Select grade</SelectItem>
+                      <SelectItem value="Pass">Pass</SelectItem>
+                      <SelectItem value="Fail">Fail</SelectItem>
+                      <SelectItem value="Complete">Complete</SelectItem>
+                    </Select>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <Select
+                      value={attendanceData[student.id] || 'status-placeholder'}
+                      onValueChange={(value) => handleStatusChange(student.id, value)}
+                    >
+                      <SelectItem value="status-placeholder">Select status</SelectItem>
                       <SelectItem value="Present">Present</SelectItem>
                       <SelectItem value="Late">Late</SelectItem>
                       <SelectItem value="Absent">Absent</SelectItem>
@@ -263,15 +400,15 @@ export default function AttendancePage() {
         </div>
       </Card>
 
-      {/* Progress Note */}
+      {/* Info Note */}
       <Card className="p-4 bg-blue-50 border-blue-200">
         <div className="flex items-start gap-3">
-          <AlertCircle className="text-blue-600 mt-0.5" size={20} />
+          <Cloud className="text-blue-600 mt-0.5" size={20} />
           <div>
-            <h3 className="font-semibold text-blue-800">Weekly Attendance Tracking</h3>
+            <h3 className="font-semibold text-blue-800">Auto-Save Enabled</h3>
             <p className="text-sm text-blue-700">
-              Tracking {filteredStudents?.length || 0} students for Week {currentWeek}. 
-              Use the cohort filter to focus on specific groups.
+              Changes are saved automatically. The Save All button is available for manual backup.
+              Tracking {filteredStudents?.length || 0} students for Week {currentWeek}.
             </p>
           </div>
         </div>

@@ -1,7 +1,10 @@
 'use client'
 
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useStudents } from '@/hooks/useStudents'
 import { useAttendance } from '@/hooks/useAttendance'
+import { supabase } from '@/lib/supabase'
 import { Card } from '@/components/ui/Card'
 import { Users, Award, Clock, Target } from 'lucide-react'
 import {
@@ -18,10 +21,25 @@ import {
 } from 'recharts'
 
 export default function DashboardPage() {
-  const { students, loading } = useStudents()
-  const { getAttendanceSummary } = useAttendance(1) // Current week
+  const router = useRouter()
+  const [isLoading, setIsLoading] = useState(true)
+  const { students, loading: studentsLoading } = useStudents()
+  const { getAttendanceSummary } = useAttendance(1)
 
-  if (loading) {
+  // Check for session first
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        router.push('/login')
+      } else {
+        setIsLoading(false)
+      }
+    }
+    checkSession()
+  }, [router])
+
+  if (isLoading || studentsLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-gray-500">Loading dashboard...</div>
@@ -29,16 +47,14 @@ export default function DashboardPage() {
     )
   }
 
-  // Calculate stats
-  const totalStudents = students.length
-  const complete = students.filter(s => s.final_status === 'Complete').length
-  const pass = students.filter(s => s.final_status === 'Pass').length
-  const fail = students.filter(s => s.final_status === 'Fail').length
-  const pending = students.filter(s => s.final_status === 'Pending').length
-  const homerow = students.filter(s => s.typing_style === 'Homerow').length
-  const hunting = students.filter(s => s.typing_style === 'Hunting').length
+  // Rest of your dashboard code...
+  const totalStudents = students?.length || 0
+  const complete = students?.filter(s => s.final_status === 'Complete').length || 0
+  const pass = students?.filter(s => s.final_status === 'Pass').length || 0
+  const fail = students?.filter(s => s.final_status === 'Fail').length || 0
+  const pending = students?.filter(s => s.final_status === 'Pending').length || 0
+  const homerow = students?.filter(s => s.typing_style === 'Homerow').length || 0
 
-  // Status distribution for pie chart
   const statusData = [
     { name: 'Complete', value: complete, color: '#22c55e' },
     { name: 'Pass', value: pass, color: '#eab308' },
@@ -46,10 +62,9 @@ export default function DashboardPage() {
     { name: 'Pending', value: pending, color: '#6b7280' },
   ].filter(item => item.value > 0)
 
-  // Style distribution for bar chart
   const styleData = [
     { name: 'Homerow', value: homerow, color: '#3b82f6' },
-    { name: 'Hunting', value: hunting, color: '#f97316' },
+    { name: 'Hunting', value: (students?.length || 0) - homerow, color: '#f97316' },
   ]
 
   const stats = [
@@ -63,7 +78,6 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Dashboard</h1>
       
-      {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((stat, index) => (
           <Card key={index} className="p-6">
@@ -80,9 +94,7 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Status Distribution Pie Chart */}
         <Card className="p-6">
           <h2 className="text-lg font-semibold mb-4">Status Distribution</h2>
           <div className="h-80">
@@ -93,7 +105,7 @@ export default function DashboardPage() {
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
+                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                   outerRadius={80}
                   fill="#8884d8"
                   dataKey="value"
@@ -108,7 +120,6 @@ export default function DashboardPage() {
           </div>
         </Card>
 
-        {/* Typing Style Bar Chart */}
         <Card className="p-6">
           <h2 className="text-lg font-semibold mb-4">Typing Style Distribution</h2>
           <div className="h-80">
@@ -129,7 +140,6 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Recent Students */}
       <Card className="p-6">
         <h2 className="text-lg font-semibold mb-4">Recent Students</h2>
         <div className="overflow-x-auto">
@@ -144,7 +154,7 @@ export default function DashboardPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {students.slice(0, 5).map((student) => (
+              {students?.slice(0, 5).map((student) => (
                 <tr key={student.id}>
                   <td className="px-4 py-2">{student.name}</td>
                   <td className="px-4 py-2 text-sm text-gray-600">{student.email}</td>

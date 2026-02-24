@@ -48,7 +48,7 @@ export interface EmailLog {
   status: 'sent' | 'failed' | 'bounced'
   error_message: string | null
   sent_at: string
-  metadata: any
+  metadata: unknown
 }
 
 export interface StudentWithAttendance extends Student {

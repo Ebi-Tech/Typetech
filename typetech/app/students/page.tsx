@@ -1,8 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { StudentImport } from '@/components/students/StudentImport'
-import { StudentList } from '@/components/students/StudentList'
 import { CohortSelector } from '@/components/cohorts/CohortSelector'
 import { useStudents } from '@/hooks/useStudents'
 import { Student } from '@/types/database'
@@ -10,32 +9,62 @@ import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
-import { Plus, Download } from 'lucide-react'
+import { Card } from '@/components/ui/Card'
+import { Plus, Download, ChevronDown, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import toast from 'react-hot-toast'
+
+
 
 export default function StudentsPage() {
-  const { students, loading, updateStudent, deleteStudent } = useStudents()
+  const { students, loading, updateStudent, deleteStudent, refresh } = useStudents()
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [editingStudent, setEditingStudent] = useState<Student | null>(null)
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [selectedCohort, setSelectedCohort] = useState<string | null>(null)
   const [cohorts, setCohorts] = useState<any[]>([])
+  const [expandedCohorts, setExpandedCohorts] = useState<Record<string, boolean>>({})
 
-  // Filter students by cohort
-  const filteredStudents = selectedCohort
-    ? students.filter(s => s.cohort_id === selectedCohort)
-    : students
+  // Fetch cohorts
+  const fetchCohorts = async () => {
+    const { data } = await supabase.from('cohorts').select('*').order('name')
+    setCohorts(data || [])
+    
+    // Initialize all cohorts as expanded
+    const expanded: Record<string, boolean> = {}
+    data?.forEach(cohort => {
+      expanded[cohort.id] = true
+    })
+    setExpandedCohorts(expanded)
+  }
+
+  useEffect(() => {
+    fetchCohorts()
+  }, [])
+
+  // Group students by cohort
+  const studentsByCohort = cohorts.map(cohort => ({
+    ...cohort,
+    students: students?.filter(s => s.cohort_id === cohort.id) || []
+  }))
+
+  // Add "No Cohort" group
+  const noCohortStudents = students?.filter(s => !s.cohort_id) || []
+  
+  const allGroups = [
+    ...(noCohortStudents.length > 0 ? [{ id: 'none', name: 'No Cohort', students: noCohortStudents }] : []),
+    ...studentsByCohort.filter(group => group.students.length > 0)
+  ]
+
+  const toggleCohort = (cohortId: string) => {
+    setExpandedCohorts(prev => ({
+      ...prev,
+      [cohortId]: !prev[cohortId]
+    }))
+  }
 
   const handleEdit = (student: Student) => {
     setEditingStudent(student)
     setIsEditDialogOpen(true)
-    fetchCohorts()
-  }
-
-  const fetchCohorts = async () => {
-    const { data } = await supabase.from('cohorts').select('*')
-    setCohorts(data || [])
   }
 
   const handleSaveEdit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -50,7 +79,7 @@ export default function StudentsPage() {
       typing_style: formData.get('typing_style') as 'Hunting' | 'Homerow' | null,
       wpm_score: formData.get('wpm_score') ? Number(formData.get('wpm_score')) : null,
       curriculum_completed: formData.get('curriculum_completed') === 'true',
-      final_status: formData.get('final_status') as any,
+      final_status: formData.get('final_status') as Student['final_status'],
       cohort_id: cohortIdValue === null || cohortIdValue === '' ? null : String(cohortIdValue),
       notes: formData.get('notes') as string,
     }
@@ -72,16 +101,12 @@ export default function StudentsPage() {
 
   const handleExport = () => {
     const csv = [
-      ['Name', 'Email', 'Typing Style', 'WPM', 'Curriculum', 'Status', 'Cohort', 'Notes'].join(','),
-      ...filteredStudents.map(s => [
+      ['Name', 'Email', 'Typing Style', 'Cohort'].join(','),
+      ...students?.map(s => [
         s.name,
         s.email,
         s.typing_style || '',
-        s.wpm_score || '',
-        s.curriculum_completed ? 'Yes' : 'No',
-        s.final_status,
-        s.cohort_id || '',
-        s.notes || ''
+        cohorts.find(c => c.id === s.cohort_id)?.name || ''
       ].join(','))
     ].join('\n')
 
@@ -117,11 +142,13 @@ export default function StudentsPage() {
         </div>
       </div>
 
-      {/* Cohort Filter */}
+      {/* Cohort Filter (for quick filtering) */}
       <div className="flex items-center gap-4 mb-4">
         <CohortSelector 
           selectedCohort={selectedCohort}
           onCohortChange={setSelectedCohort}
+          cohorts={cohorts}
+          onCohortCreated={fetchCohorts}
         />
       </div>
 
@@ -138,11 +165,67 @@ export default function StudentsPage() {
         </Dialog>
       )}
 
-      <StudentList 
-        students={filteredStudents} 
-        onEdit={handleEdit}
-        onDelete={handleDelete}
-      />
+      {/* Cohort Groups */}
+      <div className="space-y-4">
+        {allGroups.map((group) => (
+          <Card key={group.id} className="overflow-hidden">
+            <div 
+              className="px-4 py-3 bg-gray-50 border-b flex items-center justify-between cursor-pointer hover:bg-gray-100"
+              onClick={() => toggleCohort(group.id)}
+            >
+              <div className="flex items-center gap-2">
+                {expandedCohorts[group.id] ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+                <h2 className="font-semibold">{group.name}</h2>
+                <span className="text-sm text-gray-500">({group.students.length} students)</span>
+              </div>
+            </div>
+            
+            {expandedCohorts[group.id] && (
+              <div className="p-4">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Name</th>
+                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Email</th>
+                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Typing Style</th>
+                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {group.students.map((student: Student) => (
+                      <tr key={student.id}>
+                        <td className="px-4 py-2">
+                          {student.name}
+                        </td>
+                        <td className="px-4 py-2 text-sm text-gray-600">{student.email}</td>
+                        <td className="px-4 py-2">
+                          {student.typing_style && (
+                            <span className={`px-2 py-1 rounded-full text-xs ${
+                              student.typing_style === 'Homerow' 
+                                ? 'bg-green-100 text-green-800' 
+                                : 'bg-orange-100 text-orange-800'
+                            }`}>
+                              {student.typing_style}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2">
+                          <Button size="sm" variant="ghost" onClick={() => handleEdit(student)}>
+                            Edit
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => handleDelete(student.id)}>
+                            Delete
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        ))}
+      </div>
 
       {/* Edit Student Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
@@ -176,6 +259,17 @@ export default function StudentsPage() {
                 <option value="Homerow">Homerow</option>
               </Select>
               
+              <Select
+                name="cohort_id"
+                label="Cohort"
+                defaultValue={editingStudent.cohort_id || ''}
+              >
+                <option value="">No Cohort</option>
+                {cohorts.map((cohort) => (
+                  <option key={cohort.id} value={cohort.id}>{cohort.name}</option>
+                ))}
+              </Select>
+              
               <Input
                 name="wpm_score"
                 label="WPM Score"
@@ -190,17 +284,6 @@ export default function StudentsPage() {
               >
                 <option value="false">No</option>
                 <option value="true">Yes</option>
-              </Select>
-              
-              <Select
-                name="cohort_id"
-                label="Cohort"
-                defaultValue={editingStudent.cohort_id || ''}
-              >
-                <option value="">No Cohort</option>
-                {cohorts.map((cohort) => (
-                  <option key={cohort.id} value={cohort.id}>{cohort.name}</option>
-                ))}
               </Select>
               
               <Select
