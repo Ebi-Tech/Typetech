@@ -7,22 +7,29 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Select, SelectItem } from '@/components/ui/Select'
 import { ChevronLeft, ChevronRight, Save, Cloud, CheckCircle2 } from 'lucide-react'
-import { AttendanceStatus, FinalStatus } from '@/types/database'
+import { AttendanceStatus, TypingStyle } from '@/types/database'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
+
+interface WeekData {
+  student_id: string
+  typing_style?: string
+  grade?: string
+}
 
 export default function AttendancePage() {
   const [currentWeek, setCurrentWeek] = useState(1)
   const [attendanceData, setAttendanceData] = useState<Record<string, AttendanceStatus>>({})
+  const [typingStyleData, setTypingStyleData] = useState<Record<string, string>>({})
   const [gradeData, setGradeData] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
   const [selectedCohort, setSelectedCohort] = useState<string | null>(null)
-  const [cohorts, setCohorts] = useState<unknown[]>([])
+  const [cohorts, setCohorts] = useState<any[]>([])
   const [syncMessage, setSyncMessage] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [lastSync, setLastSync] = useState<Date | null>(null)
   
-  const { students, loading: studentsLoading, updateStudent } = useStudents()
+  const { students, loading: studentsLoading } = useStudents()
 
   // Fetch cohorts
   const fetchCohorts = async () => {
@@ -39,38 +46,47 @@ export default function AttendancePage() {
     ? students?.filter(s => s.cohort_id === selectedCohort)
     : students
 
-  // Load attendance data for current week
+  // Load ALL week-specific data for current week
   useEffect(() => {
-    const fetchAttendance = async () => {
-      if (!filteredStudents) return
+    const fetchWeekData = async () => {
+      if (!filteredStudents || filteredStudents.length === 0) return
 
-      const { data } = await supabase
+      // Fetch attendance
+      const { data: attendance } = await supabase
         .from('attendance')
         .select('*')
         .eq('week_number', currentWeek)
 
-      if (data) {
+      if (attendance) {
         const attendanceMap: Record<string, AttendanceStatus> = {}
-        data.forEach(record => {
+        attendance.forEach(record => {
           attendanceMap[record.student_id] = record.status
         })
         setAttendanceData(attendanceMap)
       }
+
+      // Fetch week-specific data (typing style and grade)
+      const { data: weekData } = await supabase
+        .from('week_data')
+        .select('*')
+        .eq('week_number', currentWeek)
+
+      if (weekData) {
+        const typingMap: Record<string, string> = {}
+        const gradeMap: Record<string, string> = {}
+        
+        weekData.forEach(record => {
+          if (record.typing_style) typingMap[record.student_id] = record.typing_style
+          if (record.grade) gradeMap[record.student_id] = record.grade
+        })
+        
+        setTypingStyleData(typingMap)
+        setGradeData(gradeMap)
+      }
     }
 
-    fetchAttendance()
+    fetchWeekData()
   }, [currentWeek, filteredStudents])
-
-  // Load grade data from students
-  useEffect(() => {
-    if (filteredStudents) {
-      const gradeMap: Record<string, string> = {}
-      filteredStudents.forEach(student => {
-        gradeMap[student.id] = student.final_status || 'grade-placeholder'
-      })
-      setGradeData(gradeMap)
-    }
-  }, [filteredStudents])
 
   const saveAttendance = async (studentId: string, weekNumber: number, status: AttendanceStatus) => {
     try {
@@ -102,8 +118,42 @@ export default function AttendancePage() {
     }
   }
 
+  const saveWeekData = async (
+    studentId: string, 
+    weekNumber: number, 
+    updates: { typing_style?: string; grade?: string }
+  ) => {
+    try {
+      const { data: existing } = await supabase
+        .from('week_data')
+        .select('id')
+        .eq('student_id', studentId)
+        .eq('week_number', weekNumber)
+        .single()
+
+      if (existing) {
+        await supabase
+          .from('week_data')
+          .update(updates)
+          .eq('id', existing.id)
+      } else {
+        await supabase
+          .from('week_data')
+          .insert([{
+            student_id: studentId,
+            week_number: weekNumber,
+            ...updates
+          }])
+      }
+      return true
+    } catch (error) {
+      console.error('Auto-save failed:', error)
+      return false
+    }
+  }
+
   const handleStatusChange = async (studentId: string, value: string) => {
-    if (value === 'status-placeholder') return
+    if (value === 'blank-status') return
     
     const status = value as AttendanceStatus
     setAttendanceData(prev => ({
@@ -111,18 +161,16 @@ export default function AttendancePage() {
       [studentId]: status
     }))
     
-    // Show saving message
     setSyncMessage('Saving...')
     setSyncing(true)
     
-    // Save to database
     const success = await saveAttendance(studentId, currentWeek, status)
     
     setSyncing(false)
     if (success) {
       setLastSync(new Date())
       setSyncMessage(null)
-      toast.success('✓ Synced', {
+      toast.success('✓ Attendance saved', {
         duration: 2000,
         position: 'top-center',
         icon: '🔄',
@@ -133,31 +181,68 @@ export default function AttendancePage() {
           padding: '8px 16px',
         },
       })
-    } else {
-      toast.error('Failed to save')
+    }
+  }
+
+  const handleTypingStyleChange = async (studentId: string, value: string) => {
+    if (value === 'blank-style') return
+    
+    setTypingStyleData(prev => ({
+      ...prev,
+      [studentId]: value
+    }))
+    
+    setSyncMessage('Saving...')
+    setSyncing(true)
+    
+    const success = await saveWeekData(studentId, currentWeek, { typing_style: value })
+    
+    setSyncing(false)
+    if (success) {
+      setLastSync(new Date())
+      setSyncMessage(null)
+      toast.success('✓ Typing style saved', {
+        duration: 2000,
+        position: 'top-center',
+        icon: '🔄',
+        style: {
+          background: '#10b981',
+          color: 'white',
+          fontSize: '14px',
+          padding: '8px 16px',
+        },
+      })
     }
   }
 
   const handleGradeChange = async (studentId: string, value: string) => {
-    if (value === 'grade-placeholder') return
+    if (value === 'blank-grade') return
     
     setGradeData(prev => ({
       ...prev,
       [studentId]: value
     }))
     
-    try {
-      await updateStudent(studentId, { final_status: value as FinalStatus })
-      toast.success('Grade updated', {
+    setSyncMessage('Saving...')
+    setSyncing(true)
+    
+    const success = await saveWeekData(studentId, currentWeek, { grade: value })
+    
+    setSyncing(false)
+    if (success) {
+      setLastSync(new Date())
+      setSyncMessage(null)
+      toast.success('✓ Grade saved', {
         duration: 2000,
-        icon: '✓',
+        position: 'top-center',
+        icon: '🔄',
         style: {
           background: '#10b981',
           color: 'white',
+          fontSize: '14px',
+          padding: '8px 16px',
         },
       })
-    } catch (error) {
-      toast.error('Failed to update grade')
     }
   }
 
@@ -167,37 +252,32 @@ export default function AttendancePage() {
     setSaving(true)
     try {
       const promises = filteredStudents.map(async (student) => {
-        const status = attendanceData[student.id]
-        if (!status) return
+        const saves = []
         
-        const { data: existing } = await supabase
-          .from('attendance')
-          .select('id')
-          .eq('student_id', student.id)
-          .eq('week_number', currentWeek)
-          .single()
-
-        if (existing) {
-          return supabase
-            .from('attendance')
-            .update({ status })
-            .eq('id', existing.id)
-        } else {
-          return supabase
-            .from('attendance')
-            .insert([{
-              student_id: student.id,
-              week_number: currentWeek,
-              status
-            }])
+        // Save attendance
+        const status = attendanceData[student.id]
+        if (status) {
+          saves.push(saveAttendance(student.id, currentWeek, status))
         }
+        
+        // Save week data
+        const typingStyle = typingStyleData[student.id]
+        const grade = gradeData[student.id]
+        if (typingStyle || grade) {
+          saves.push(saveWeekData(student.id, currentWeek, { 
+            typing_style: typingStyle, 
+            grade 
+          }))
+        }
+        
+        return Promise.all(saves)
       })
 
       await Promise.all(promises)
-      toast.success(`Week ${currentWeek} attendance saved!`)
+      toast.success(`Week ${currentWeek} data saved!`)
       setLastSync(new Date())
     } catch (error) {
-      toast.error('Failed to save attendance')
+      toast.error('Failed to save')
     } finally {
       setSaving(false)
     }
@@ -268,7 +348,7 @@ export default function AttendancePage() {
           </Button>
           <Button onClick={handleManualSave} disabled={saving}>
             <Save size={16} className="mr-2" />
-            {saving ? 'Saving...' : 'Save All'}
+            {saving ? 'Saving...' : 'Save Week'}
           </Button>
         </div>
       </div>
@@ -334,6 +414,14 @@ export default function AttendancePage() {
         </Card>
       </div>
 
+      {/* Info Banner */}
+      <Card className="p-3 bg-blue-50 border-blue-200">
+        <p className="text-sm text-blue-700">
+          <span className="font-semibold">Week {currentWeek}:</span> All fields are week-specific. 
+          Changes here won't affect other weeks.
+        </p>
+      </Card>
+
       {/* Attendance Table */}
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
@@ -348,12 +436,15 @@ export default function AttendancePage() {
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Typing Style
+                  <span className="block text-xs font-normal text-gray-400">(Week {currentWeek})</span>
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Grade (Pass/Fail/Complete)
+                  Grade
+                  <span className="block text-xs font-normal text-gray-400">(Week {currentWeek})</span>
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Attendance Status
+                  Attendance
+                  <span className="block text-xs font-normal text-gray-400">(Week {currentWeek})</span>
                 </th>
               </tr>
             </thead>
@@ -367,16 +458,29 @@ export default function AttendancePage() {
                     {student.email}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="text-gray-600">
-                      {student.typing_style || '—'}
-                    </span>
+                    <Select
+                      value={typingStyleData[student.id] || 'blank-style'}
+                      onValueChange={(value) => {
+                        if (value !== 'blank-style') {
+                          handleTypingStyleChange(student.id, value)
+                        }
+                      }}
+                    >
+                      <SelectItem value="blank-style">—</SelectItem>
+                      <SelectItem value="Hunting">Hunting</SelectItem>
+                      <SelectItem value="Homerow">Homerow</SelectItem>
+                    </Select>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <Select
-                      value={gradeData[student.id] || 'grade-placeholder'}
-                      onValueChange={(value) => handleGradeChange(student.id, value)}
+                      value={gradeData[student.id] || 'blank-grade'}
+                      onValueChange={(value) => {
+                        if (value !== 'blank-grade') {
+                          handleGradeChange(student.id, value)
+                        }
+                      }}
                     >
-                      <SelectItem value="grade-placeholder">Select grade</SelectItem>
+                      <SelectItem value="blank-grade">—</SelectItem>
                       <SelectItem value="Pass">Pass</SelectItem>
                       <SelectItem value="Fail">Fail</SelectItem>
                       <SelectItem value="Complete">Complete</SelectItem>
@@ -384,10 +488,14 @@ export default function AttendancePage() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <Select
-                      value={attendanceData[student.id] || 'status-placeholder'}
-                      onValueChange={(value) => handleStatusChange(student.id, value)}
+                      value={attendanceData[student.id] || 'blank-status'}
+                      onValueChange={(value) => {
+                        if (value !== 'blank-status') {
+                          handleStatusChange(student.id, value)
+                        }
+                      }}
                     >
-                      <SelectItem value="status-placeholder">Select status</SelectItem>
+                      <SelectItem value="blank-status">—</SelectItem>
                       <SelectItem value="Present">Present</SelectItem>
                       <SelectItem value="Late">Late</SelectItem>
                       <SelectItem value="Absent">Absent</SelectItem>
@@ -397,20 +505,6 @@ export default function AttendancePage() {
               ))}
             </tbody>
           </table>
-        </div>
-      </Card>
-
-      {/* Info Note */}
-      <Card className="p-4 bg-blue-50 border-blue-200">
-        <div className="flex items-start gap-3">
-          <Cloud className="text-blue-600 mt-0.5" size={20} />
-          <div>
-            <h3 className="font-semibold text-blue-800">Auto-Save Enabled</h3>
-            <p className="text-sm text-blue-700">
-              Changes are saved automatically. The Save All button is available for manual backup.
-              Tracking {filteredStudents?.length || 0} students for Week {currentWeek}.
-            </p>
-          </div>
         </div>
       </Card>
     </div>
