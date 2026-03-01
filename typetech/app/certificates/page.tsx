@@ -7,8 +7,8 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Select, SelectItem } from '@/components/ui/Select'
 import { Badge } from '@/components/ui/Badge'
-import { Download, Mail, CheckCircle, Eye, Upload } from 'lucide-react'
-import { PDFDocument, rgb } from 'pdf-lib'
+import { Download, Mail, CheckCircle, Eye } from 'lucide-react'
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
 
@@ -86,64 +86,70 @@ export default function CertificatesPage() {
 
   const generateCertificate = async (studentId: string, studentName: string) => {
     try {
-      const pdfDoc = await PDFDocument.create()
-      const page = pdfDoc.addPage([600, 400])
-      
-      page.drawRectangle({
-        x: 20,
-        y: 20,
-        width: 560,
-        height: 360,
-        borderColor: rgb(0.2, 0.4, 0.8),
-        borderWidth: 2,
-      })
-      
-      page.drawText('Certificate of Completion', {
-        x: 150,
-        y: 300,
-        size: 24,
-        color: rgb(0, 0, 0.5),
-      })
-      
-      page.drawText(studentName, {
-        x: 250,
-        y: 200,
-        size: 20,
-        color: rgb(0, 0, 0),
-      })
-      
-      page.drawText('Typing Class', {
-        x: 260,
-        y: 160,
-        size: 16,
-        color: rgb(0.3, 0.3, 0.3),
-      })
-      
-      const date = new Date().toLocaleDateString()
-      page.drawText(`Date: ${date}`, {
-        x: 240,
-        y: 100,
-        size: 12,
-        color: rgb(0.5, 0.5, 0.5),
-      })
-      
+      // Fetch the template from Supabase Storage
+      const { data: templateUrlData } = supabase.storage
+        .from('certificate')
+        .getPublicUrl('certificate-templates/template.pdf')
+
+      const templateResponse = await fetch(templateUrlData.publicUrl)
+      if (!templateResponse.ok) {
+        throw new Error('No template found. Please upload one in Settings > Certificates.')
+      }
+      const templateBytes = await templateResponse.arrayBuffer()
+
+      // Load the template
+      const pdfDoc = await PDFDocument.load(templateBytes)
+      const pages = pdfDoc.getPages()
+      const firstPage = pages[0]
+      const { width, height } = firstPage.getSize()
+
+      // Try AcroForm field first (for PDFs that have one named 'studentName')
+      let nameWritten = false
+      try {
+        const form = pdfDoc.getForm()
+        const field = form.getTextField('studentName')
+        field.setText(studentName)
+        form.flatten()
+        nameWritten = true
+      } catch {
+        // No form field — fall back to coordinate overlay
+      }
+
+      if (!nameWritten) {
+        // Read position from localStorage (configured in Settings > Certificates)
+        const centerX = Number(localStorage.getItem('cert_name_x') || width / 2)
+        const nameY = Number(localStorage.getItem('cert_name_y') || height * 0.45)
+        const fontSize = Number(localStorage.getItem('cert_name_size') || 36)
+
+        const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
+        const textWidth = font.widthOfTextAtSize(studentName, fontSize)
+
+        firstPage.drawText(studentName, {
+          x: centerX - textWidth / 2,
+          y: nameY,
+          size: fontSize,
+          font,
+          color: rgb(0, 0, 0),
+        })
+      }
+
       const pdfBytes = await pdfDoc.save()
       const pdfBlob = new Blob([pdfBytes], { type: 'application/pdf' })
-      
+
       const fileName = `${studentName.replace(/\s+/g, '_')}_Certificate.pdf`
       const { error } = await supabase.storage
-        .from('certificates')
+        .from('certificate')
         .upload(`${studentId}/${fileName}`, pdfBlob, {
           contentType: 'application/pdf',
           upsert: true
         })
-      
+
       if (error) throw error
-      
+
       const { data: urlData } = supabase.storage
-        .from('certificates')
+        .from('certificate')
         .getPublicUrl(`${studentId}/${fileName}`)
-      
+
       const { error: dbError } = await supabase
         .from('certificates')
         .upsert({
@@ -153,9 +159,9 @@ export default function CertificatesPage() {
           email_sent: false,
           email_attempts: 0
         })
-      
+
       if (dbError) throw dbError
-      
+
       setCertificateStatus(prev => ({
         ...prev,
         [studentId]: {
@@ -164,7 +170,7 @@ export default function CertificatesPage() {
           email_sent: false
         }
       }))
-      
+
       return urlData.publicUrl
     } catch (error) {
       console.error('Error generating certificate:', error)
@@ -216,26 +222,27 @@ export default function CertificatesPage() {
       try {
         const cert = certificateStatus[studentId]
         if (!cert?.certificate_url) {
-          throw new Error('Certificate not found')
+          throw new Error('Generate the certificate first before emailing')
         }
 
-        const { error: logError } = await supabase
-          .from('email_logs')
-          .insert([{
-            student_id: studentId,
-            email_type: 'certificate',
-            recipient_email: student.email,
-            subject: 'Your Typing Class Certificate',
-            status: 'sent',
-            metadata: { certificate_url: cert.certificate_url }
-          }])
+        // Actually send the email with PDF attached
+        const res = await fetch('/api/send-certificate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            studentName: student.name,
+            studentEmail: student.email,
+            certificateUrl: cert.certificate_url,
+          }),
+        })
 
-        if (logError) throw logError
+        if (!res.ok) throw new Error('Email failed')
 
+        // Mark as sent in DB
         await supabase
           .from('certificates')
-          .update({ 
-            email_sent: true, 
+          .update({
+            email_sent: true,
             email_sent_at: new Date().toISOString(),
             email_attempts: (cert.email_attempts || 0) + 1
           })
@@ -243,16 +250,24 @@ export default function CertificatesPage() {
 
         await supabase
           .from('students')
-          .update({ 
-            certificate_emailed: true, 
-            certificate_emailed_at: new Date().toISOString() 
+          .update({
+            certificate_emailed: true,
+            certificate_emailed_at: new Date().toISOString()
           })
           .eq('id', studentId)
 
+        await supabase
+          .from('email_logs')
+          .insert([{
+            student_id: studentId,
+            email_type: 'certificate',
+            recipient_email: student.email,
+            subject: 'Your Typing Class Certificate of Completion',
+            status: 'sent',
+            metadata: { certificate_url: cert.certificate_url }
+          }])
+
         success++
-        
-        await new Promise(resolve => setTimeout(resolve, 100))
-        
       } catch (error) {
         failed++
         await supabase
@@ -297,24 +312,6 @@ export default function CertificatesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Certificates</h1>
-        <div className="flex gap-2">
-          <Button 
-            variant="outline"
-            onClick={() => document.getElementById('template-upload')?.click()}
-          >
-            <Upload size={16} className="mr-2" />
-            Upload Template
-          </Button>
-          <input
-            id="template-upload"
-            type="file"
-            accept=".pdf"
-            className="hidden"
-            onChange={(e) => {
-              toast.success('Template uploaded (demo)')
-            }}
-          />
-        </div>
       </div>
 
       {/* Filters */}

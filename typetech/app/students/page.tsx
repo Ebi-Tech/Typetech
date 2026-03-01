@@ -76,7 +76,6 @@ export default function StudentsPage() {
     const updates = {
       name: formData.get('name') as string,
       email: formData.get('email') as string,
-      typing_style: formData.get('typing_style') as 'Hunting' | 'Homerow' | null,
       wpm_score: formData.get('wpm_score') ? Number(formData.get('wpm_score')) : null,
       curriculum_completed: formData.get('curriculum_completed') === 'true',
       final_status: formData.get('final_status') as Student['final_status'],
@@ -101,11 +100,10 @@ export default function StudentsPage() {
 
   const handleExport = () => {
     const csv = [
-      ['Name', 'Email', 'Typing Style', 'Cohort'].join(','),
+      ['Name', 'Email', 'Cohort'].join(','),
       ...students?.map(s => [
         s.name,
         s.email,
-        s.typing_style || '',
         cohorts.find(c => c.id === s.cohort_id)?.name || ''
       ].join(','))
     ].join('\n')
@@ -187,7 +185,6 @@ export default function StudentsPage() {
                     <tr>
                       <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Name</th>
                       <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Email</th>
-                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Typing Style</th>
                       <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Actions</th>
                     </tr>
                   </thead>
@@ -198,17 +195,6 @@ export default function StudentsPage() {
                           {student.name}
                         </td>
                         <td className="px-4 py-2 text-sm text-gray-600">{student.email}</td>
-                        <td className="px-4 py-2">
-                          {student.typing_style && (
-                            <span className={`px-2 py-1 rounded-full text-xs ${
-                              student.typing_style === 'Homerow' 
-                                ? 'bg-green-100 text-green-800' 
-                                : 'bg-orange-100 text-orange-800'
-                            }`}>
-                              {student.typing_style}
-                            </span>
-                          )}
-                        </td>
                         <td className="px-4 py-2">
                           <Button size="sm" variant="ghost" onClick={() => handleEdit(student)}>
                             Edit
@@ -248,16 +234,6 @@ export default function StudentsPage() {
                 defaultValue={editingStudent.email}
                 required
               />
-              
-              <Select
-                name="typing_style"
-                label="Typing Style"
-                defaultValue={editingStudent.typing_style || ''}
-              >
-                <option value="">Not set</option>
-                <option value="Hunting">Hunting</option>
-                <option value="Homerow">Homerow</option>
-              </Select>
               
               <Select
                 name="cohort_id"

@@ -78,14 +78,20 @@ export default function InvitesPage() {
 
       if (error) throw error
 
-      // Copy link to clipboard
-      await navigator.clipboard.writeText(inviteLink)
-      
-      toast.success('Invite link copied to clipboard!')
+      // Send invite email
+      const res = await fetch('/api/send-invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: newInviteEmail, inviteLink }),
+      })
+
+      if (!res.ok) throw new Error('Email failed')
+
+      toast.success(`Invite sent to ${newInviteEmail}`)
       setNewInviteEmail('')
       fetchInvites()
     } catch (error) {
-      toast.error('Failed to create invite')
+      toast.error('Failed to send invite')
     } finally {
       setSending(false)
     }
@@ -126,7 +132,7 @@ export default function InvitesPage() {
           />
           <Button onClick={sendInvite} disabled={sending}>
             <Send size={16} className="mr-2" />
-            {sending ? 'Creating...' : 'Create Invite'}
+            {sending ? 'Sending...' : 'Send Invite'}
           </Button>
         </div>
         <p className="text-sm text-gray-500 mt-2">

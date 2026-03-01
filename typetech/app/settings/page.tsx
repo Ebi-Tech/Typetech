@@ -1,25 +1,75 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Select, SelectItem } from '@/components/ui/Select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
-import { Save, Mail, Database, Shield, Bell, Upload } from 'lucide-react'
+import { Save, Upload, CheckCircle } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
+import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
 
 export default function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState('general')
   const [requireMinAttendance, setRequireMinAttendance] = useState(false)
+  const [templateUploading, setTemplateUploading] = useState(false)
+  const [templateExists, setTemplateExists] = useState(false)
+  const [nameX, setNameX] = useState('306')
+  const [nameY, setNameY] = useState('350')
+  const [nameFontSize, setNameFontSize] = useState('36')
+  const templateInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    // Load saved position settings from localStorage
+    setNameX(localStorage.getItem('cert_name_x') || '306')
+    setNameY(localStorage.getItem('cert_name_y') || '350')
+    setNameFontSize(localStorage.getItem('cert_name_size') || '36')
+
+    // Check if a template already exists in storage
+    const checkTemplate = async () => {
+      const { data } = supabase.storage
+        .from('certificate')
+        .getPublicUrl('certificate-templates/template.pdf')
+      const res = await fetch(data.publicUrl, { method: 'HEAD' })
+      setTemplateExists(res.ok)
+    }
+    checkTemplate()
+  }, [])
+
+  const handleTemplateUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setTemplateUploading(true)
+    try {
+      const { error } = await supabase.storage
+        .from('certificate')
+        .upload('certificate-templates/template.pdf', file, {
+          contentType: 'application/pdf',
+          upsert: true,
+        })
+
+      if (error) throw error
+
+      setTemplateExists(true)
+      toast.success('Template uploaded successfully')
+    } catch (error) {
+      toast.error('Failed to upload template')
+    } finally {
+      setTemplateUploading(false)
+      if (templateInputRef.current) templateInputRef.current.value = ''
+    }
+  }
 
   const handleSave = async () => {
     setSaving(true)
-    // Simulate save
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    toast.success('Settings saved successfully')
+    localStorage.setItem('cert_name_x', nameX)
+    localStorage.setItem('cert_name_y', nameY)
+    localStorage.setItem('cert_name_size', nameFontSize)
+    toast.success('Settings saved')
     setSaving(false)
   }
 
@@ -34,9 +84,8 @@ export default function SettingsPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="general">General</TabsTrigger>
-          <TabsTrigger value="email">Email</TabsTrigger>
           <TabsTrigger value="certificates">Certificates</TabsTrigger>
           <TabsTrigger value="attendance">Attendance</TabsTrigger>
           <TabsTrigger value="users">Users</TabsTrigger>
@@ -81,116 +130,82 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
 
-        {/* Email Settings */}
-        <TabsContent value="email">
-          <Card className="p-6">
-            <h2 className="text-lg font-semibold mb-4">Email Configuration</h2>
-            <div className="space-y-4">
-              <Input
-                label="SMTP Host"
-                defaultValue="smtp.gmail.com"
-                placeholder="smtp.gmail.com"
-              />
-              
-              <Input
-                label="SMTP Port"
-                type="number"
-                defaultValue="587"
-                placeholder="587"
-              />
-              
-              <Input
-                label="SMTP Username"
-                defaultValue="typing@yourdepartment.edu"
-                placeholder="email@domain.com"
-              />
-              
-              <Input
-                label="SMTP Password"
-                type="password"
-                defaultValue=""
-                placeholder="Enter SMTP password"
-              />
-              
-              <Input
-                label="From Email"
-                defaultValue="typing@yourdepartment.edu"
-                placeholder="from@domain.com"
-              />
-              
-              <Input
-                label="From Name"
-                defaultValue="Typing Department"
-                placeholder="From Name"
-              />
-              
-              <Button variant="outline">
-                <Mail size={16} className="mr-2" />
-                Test Email Connection
-              </Button>
-            </div>
-          </Card>
-        </TabsContent>
-
         {/* Certificate Settings */}
         <TabsContent value="certificates">
           <Card className="p-6">
             <h2 className="text-lg font-semibold mb-4">Certificate Settings</h2>
             <div className="space-y-6">
+
+              {/* Template Upload */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Certificate Template
+                  Certificate Template (PDF)
                 </label>
+                {templateExists && (
+                  <div className="flex items-center gap-2 mb-3 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">
+                    <CheckCircle size={16} />
+                    <span>Template uploaded and ready</span>
+                  </div>
+                )}
                 <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
                   <Upload className="mx-auto h-12 w-12 text-gray-400" />
                   <p className="mt-2 text-sm text-gray-600">
-                    Drag and drop your certificate template, or click to browse
+                    Upload your Canva-designed certificate PDF
                   </p>
-                  <p className="text-xs text-gray-500">
-                    PDF format recommended
+                  <p className="text-xs text-gray-500 mt-1">
+                    The student's name will be stamped on top at the position you configure below
                   </p>
-                  <Button variant="outline" className="mt-4">
-                    Upload Template
+                  <input
+                    ref={templateInputRef}
+                    type="file"
+                    accept=".pdf"
+                    className="hidden"
+                    onChange={handleTemplateUpload}
+                  />
+                  <Button
+                    variant="outline"
+                    className="mt-4"
+                    disabled={templateUploading}
+                    onClick={() => templateInputRef.current?.click()}
+                  >
+                    <Upload size={16} className="mr-2" />
+                    {templateUploading ? 'Uploading...' : templateExists ? 'Replace Template' : 'Upload Template'}
                   </Button>
                 </div>
               </div>
-              
-              <div className="space-y-2">
-                <h3 className="font-medium">Placeholder Settings</h3>
-                <Input
-                  label="Name Placeholder"
-                  defaultValue="{{studentName}}"
-                  placeholder="{{studentName}}"
-                />
-                <Input
-                  label="Date Placeholder"
-                  defaultValue="{{date}}"
-                  placeholder="{{date}}"
-                />
-                <Input
-                  label="Course Placeholder"
-                  defaultValue="Typing Class"
-                  placeholder="{{courseName}}"
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <h3 className="font-medium">Certificate Rules</h3>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <input type="checkbox" id="complete-cert" defaultChecked className="rounded" />
-                    <label htmlFor="complete-cert">Generate for "Complete" status</label>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input type="checkbox" id="pass-cert" defaultChecked className="rounded" />
-                    <label htmlFor="pass-cert">Generate for "Pass" status</label>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input type="checkbox" id="auto-email" defaultChecked className="rounded" />
-                    <label htmlFor="auto-email">Auto-send emails after generation</label>
-                  </div>
+
+              {/* Name Position */}
+              <div className="space-y-3">
+                <h3 className="font-medium">Name Position on Certificate</h3>
+                <p className="text-xs text-gray-500">
+                  PDF coordinates start from the bottom-left. For a standard Canva certificate, try X: 306, Y: 350.
+                  Adjust until the name lands in the right spot, then click Save Changes.
+                </p>
+                <div className="grid grid-cols-3 gap-4">
+                  <Input
+                    label="Center X (points)"
+                    type="number"
+                    value={nameX}
+                    onChange={e => setNameX(e.target.value)}
+                    placeholder="306"
+                  />
+                  <Input
+                    label="Y from bottom (points)"
+                    type="number"
+                    value={nameY}
+                    onChange={e => setNameY(e.target.value)}
+                    placeholder="350"
+                  />
+                  <Input
+                    label="Font Size"
+                    type="number"
+                    value={nameFontSize}
+                    onChange={e => setNameFontSize(e.target.value)}
+                    placeholder="36"
+                  />
                 </div>
               </div>
+
             </div>
           </Card>
         </TabsContent>
@@ -199,9 +214,6 @@ export default function SettingsPage() {
         <TabsContent value="attendance">
           <Card className="p-6">
             <h2 className="text-lg font-semibold mb-4">Attendance Settings</h2>
-            // Attendance state
-            const [requireMinAttendance, setRequireMinAttendance] = useState(false);
-
             <div className="space-y-4">
               <Input
                 label="Total Weeks"
