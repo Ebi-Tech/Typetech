@@ -26,7 +26,15 @@ export default function InvitesPage() {
   const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
-    fetchInvites()
+    supabase
+      .from('invites')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .then(({ data, error }) => {
+        if (error) toast.error('Failed to load invites')
+        else setInvites(data || [])
+        setLoading(false)
+      })
     supabase.auth.getUser().then(({ data: { user } }) => {
       setIsAdmin(user?.app_metadata?.role === 'admin')
     })
@@ -41,7 +49,7 @@ export default function InvitesPage() {
 
       if (error) throw error
       setInvites(data || [])
-    } catch (error) {
+    } catch {
       toast.error('Failed to load invites')
     } finally {
       setLoading(false)
@@ -94,7 +102,7 @@ export default function InvitesPage() {
       toast.success(`Invite sent to ${newInviteEmail}`)
       setNewInviteEmail('')
       fetchInvites()
-    } catch (error) {
+    } catch {
       toast.error('Failed to send invite')
     } finally {
       setSending(false)

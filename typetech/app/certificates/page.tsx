@@ -42,7 +42,9 @@ export default function CertificatesPage() {
   }
 
   useEffect(() => {
-    fetchCohorts()
+    supabase.from('cohorts').select('*').order('name').then(({ data }) => {
+      setCohorts(data || [])
+    })
   }, [])
 
   // Filter students who are eligible for certificates (Complete or Pass)
@@ -199,7 +201,7 @@ export default function CertificatesPage() {
       try {
         await generateCertificate(studentId, student.name)
         success++
-      } catch (error) {
+      } catch {
         failed++
       }
     }
@@ -300,7 +302,7 @@ export default function CertificatesPage() {
         const url = await generateCertificate(studentId, studentName)
         window.open(url, '_blank')
       }
-    } catch (error) {
+    } catch {
       toast.error('Failed to download certificate')
     }
   }

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Select, SelectItem } from '@/components/ui/Select'
 import { ChevronLeft, ChevronRight, Save, Cloud, CheckCircle2, Download } from 'lucide-react'
-import { AttendanceStatus, TypingStyle } from '@/types/database'
+import { AttendanceStatus } from '@/types/database'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
 
@@ -16,11 +16,6 @@ interface Cohort {
   name: string
 }
 
-interface WeekData {
-  student_id: string
-  typing_style?: string
-  grade?: string
-}
 
 export default function AttendancePage() {
   const [currentWeek, setCurrentWeek] = useState(1)
@@ -30,7 +25,6 @@ export default function AttendancePage() {
   const [saving, setSaving] = useState(false)
   const [selectedCohort, setSelectedCohort] = useState<string | null>(null)
   const [cohorts, setCohorts] = useState<Cohort[]>([])
-  const [syncMessage, setSyncMessage] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [lastSync, setLastSync] = useState<Date | null>(null)
   
@@ -43,7 +37,9 @@ export default function AttendancePage() {
   }
 
   useEffect(() => {
-    fetchCohorts()
+    supabase.from('cohorts').select('*').order('name').then(({ data }) => {
+      setCohorts(data || [])
+    })
   }, [])
 
   // Filter students by cohort
@@ -166,15 +162,13 @@ export default function AttendancePage() {
       [studentId]: status
     }))
     
-    setSyncMessage('Saving...')
     setSyncing(true)
-    
+
     const success = await saveAttendance(studentId, currentWeek, status)
-    
+
     setSyncing(false)
     if (success) {
       setLastSync(new Date())
-      setSyncMessage(null)
       toast.success('✓ Attendance saved', {
         duration: 2000,
         position: 'top-center',
@@ -197,7 +191,6 @@ export default function AttendancePage() {
       [studentId]: value
     }))
 
-    setSyncMessage('Saving...')
     setSyncing(true)
 
     const [success] = await Promise.all([
@@ -208,7 +201,6 @@ export default function AttendancePage() {
     setSyncing(false)
     if (success) {
       setLastSync(new Date())
-      setSyncMessage(null)
       toast.success('✓ Typing style saved', {
         duration: 2000,
         position: 'top-center',
@@ -231,7 +223,6 @@ export default function AttendancePage() {
       [studentId]: value
     }))
 
-    setSyncMessage('Saving...')
     setSyncing(true)
 
     const [success] = await Promise.all([
@@ -242,7 +233,6 @@ export default function AttendancePage() {
     setSyncing(false)
     if (success) {
       setLastSync(new Date())
-      setSyncMessage(null)
       toast.success('✓ Grade saved', {
         duration: 2000,
         position: 'top-center',
@@ -318,7 +308,7 @@ export default function AttendancePage() {
       URL.revokeObjectURL(url)
 
       toast.success('Export downloaded')
-    } catch (error) {
+    } catch {
       toast.error('Export failed')
     }
   }
@@ -361,7 +351,7 @@ export default function AttendancePage() {
       await Promise.all(promises)
       toast.success(`Week ${currentWeek} data saved!`)
       setLastSync(new Date())
-    } catch (error) {
+    } catch {
       toast.error('Failed to save')
     } finally {
       setSaving(false)
@@ -507,7 +497,7 @@ export default function AttendancePage() {
       <Card className="p-3 bg-blue-50 border-blue-200">
         <p className="text-sm text-blue-700">
           <span className="font-semibold">Week {currentWeek}:</span> All fields are week-specific. 
-          Changes here won't affect other weeks.
+          Changes here won&apos;t affect other weeks.
         </p>
       </Card>
 

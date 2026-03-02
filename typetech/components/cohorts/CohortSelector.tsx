@@ -40,7 +40,7 @@ export function CohortSelector({
       setNewCohortName('')
       setIsCreating(false)
       onCohortCreated?.()
-    } catch (error) {
+    } catch {
       toast.error('Failed to create cohort')
     }
   }

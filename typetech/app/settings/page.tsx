@@ -60,7 +60,17 @@ export default function SettingsPage() {
       }
     })
 
-    fetchUsers()
+    const loadUsers = async () => {
+      setUsersLoading(true)
+      try {
+        const res = await fetch('/api/users', { cache: 'no-store' })
+        const data = await res.json()
+        if (data.users) setUsers(data.users)
+      } finally {
+        setUsersLoading(false)
+      }
+    }
+    loadUsers()
 
     // Check if a template already exists in storage
     const checkTemplate = async () => {
@@ -91,7 +101,7 @@ export default function SettingsPage() {
 
       setTemplateExists(true)
       toast.success('Template uploaded successfully')
-    } catch (error) {
+    } catch {
       toast.error('Failed to upload template')
     } finally {
       setTemplateUploading(false)
@@ -107,7 +117,7 @@ export default function SettingsPage() {
       toast.success('All student data has been deleted')
       setShowWipeDialog(false)
       setWipeConfirmText('')
-    } catch (error) {
+    } catch {
       toast.error('Failed to delete data')
     } finally {
       setWiping(false)
@@ -241,7 +251,7 @@ export default function SettingsPage() {
                     Upload your Canva-designed certificate PDF
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
-                    The student's name will be stamped on top at the position you configure below
+                    The student&apos;s name will be stamped on top at the position you configure below
                   </p>
                   <input
                     ref={templateInputRef}
@@ -417,7 +427,7 @@ export default function SettingsPage() {
                                   <Button
                                     size="sm"
                                     variant="ghost"
-                                    onClick={() => handlePromoteUser(user.id, user.email)}
+                                    onClick={() => handlePromoteUser(user.id, user.email || '—')}
                                     className="text-blue-600 hover:bg-blue-50 hover:text-blue-700"
                                   >
                                     Make Admin

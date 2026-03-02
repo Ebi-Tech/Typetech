@@ -27,16 +27,15 @@ export default function StudentsPage() {
   const [cohorts, setCohorts] = useState<Cohort[]>([])
   const [expandedCohorts, setExpandedCohorts] = useState<Record<string, boolean>>({})
 
-  const fetchCohorts = async () => {
-    const { data } = await supabase.from('cohorts').select('*').order('name')
-    setCohorts(data || [])
-    const expanded: Record<string, boolean> = {}
-    data?.forEach(cohort => { expanded[cohort.id] = true })
-    setExpandedCohorts(prev => ({ ...expanded, ...prev }))
-  }
-
   useEffect(() => {
-    fetchCohorts()
+    const loadCohorts = async () => {
+      const { data } = await supabase.from('cohorts').select('*').order('name')
+      setCohorts(data || [])
+      const expanded: Record<string, boolean> = {}
+      data?.forEach(cohort => { expanded[cohort.id] = true })
+      setExpandedCohorts(prev => ({ ...expanded, ...prev }))
+    }
+    loadCohorts()
   }, [])
 
   const studentsByCohort = cohorts.map(cohort => ({
@@ -76,7 +75,7 @@ export default function StudentsPage() {
       await updateStudent(editingStudent.id, updates)
       setIsEditDialogOpen(false)
       setEditingStudent(null)
-    } catch (error) {
+    } catch {
       // Error handled in hook
     }
   }

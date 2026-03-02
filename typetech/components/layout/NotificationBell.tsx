@@ -36,7 +36,15 @@ export function NotificationBell() {
   }
 
   useEffect(() => {
-    fetchNotifications()
+    supabase
+      .from('invites')
+      .select('id, email')
+      .eq('status', 'accepted')
+      .then(({ data }) => {
+        if (!data) return
+        const cleared = getClearedIds()
+        setNotifications(data.filter(inv => !cleared.includes(inv.id)))
+      })
 
     // Poll every 60 s as a fallback
     const interval = setInterval(fetchNotifications, 60_000)

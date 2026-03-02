@@ -21,16 +21,10 @@ export function StudentImport({ onSuccess }: { onSuccess?: () => void }) {
   const { importStudents, loading } = useStudents()
 
   useEffect(() => {
-    fetchCohorts()
+    supabase.from('cohorts').select('id, name').order('name').then(({ data }) => {
+      setCohorts(data || [])
+    })
   }, [])
-
-  const fetchCohorts = async () => {
-    const { data } = await supabase
-      .from('cohorts')
-      .select('id, name')
-      .order('name')
-    setCohorts(data || [])
-  }
 
   const parsePastedData = () => {
     try {

@@ -6,7 +6,7 @@ import { useStudents } from '@/hooks/useStudents'
 import { supabase } from '@/lib/supabase'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
-import { Users, Award, Clock, XCircle } from 'lucide-react'
+import { Users, Award, Clock} from 'lucide-react'
 import {
   BarChart,
   Bar,
