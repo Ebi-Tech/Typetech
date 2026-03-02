@@ -2,8 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Roboto_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
-import { Sidebar } from "@/components/layout/Sidebar";
-import { Header } from "@/components/layout/Header";
+import { AppShell } from "@/components/layout/AppShell";
 import { AuthGuard } from "@/components/auth/AuthGuard";
 
 const inter = Inter({
@@ -35,15 +34,9 @@ export default function RootLayout({
       >
         <Providers>
           <AuthGuard>
-            <div className="flex min-h-screen bg-gray-50">
-              <Sidebar />
-              <div className="flex-1 flex flex-col">
-                <Header />
-                <main className="flex-1 p-6 overflow-auto text-gray-900">
-                  {children}
-                </main>
-              </div>
-            </div>
+            <AppShell>
+              {children}
+            </AppShell>
           </AuthGuard>
         </Providers>
       </body>

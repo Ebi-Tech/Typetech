@@ -6,7 +6,8 @@ import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Select, SelectItem } from '@/components/ui/Select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
-import { Save, Upload, CheckCircle } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/Dialog'
+import { Save, Upload, CheckCircle, Trash2, RefreshCw } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
@@ -14,25 +15,57 @@ import toast from 'react-hot-toast'
 export default function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState('general')
+  const [showWipeDialog, setShowWipeDialog] = useState(false)
+  const [wipeConfirmText, setWipeConfirmText] = useState('')
+  const [wiping, setWiping] = useState(false)
   const [requireMinAttendance, setRequireMinAttendance] = useState(false)
   const [templateUploading, setTemplateUploading] = useState(false)
   const [templateExists, setTemplateExists] = useState(false)
   const [nameX, setNameX] = useState('306')
   const [nameY, setNameY] = useState('350')
   const [nameFontSize, setNameFontSize] = useState('36')
+  const [selectedTerm, setSelectedTerm] = useState('trimester1')
+  const [academicYear, setAcademicYear] = useState('2026')
+  const [users, setUsers] = useState<any[]>([])
+  const [usersLoading, setUsersLoading] = useState(false)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
   const templateInputRef = useRef<HTMLInputElement>(null)
+
+  const fetchUsers = async () => {
+    setUsersLoading(true)
+    try {
+      const res = await fetch('/api/users', { cache: 'no-store' })
+      const data = await res.json()
+      if (data.users) setUsers(data.users)
+    } finally {
+      setUsersLoading(false)
+    }
+  }
 
   useEffect(() => {
     // Load saved position settings from localStorage
     setNameX(localStorage.getItem('cert_name_x') || '306')
     setNameY(localStorage.getItem('cert_name_y') || '350')
     setNameFontSize(localStorage.getItem('cert_name_size') || '36')
+    setSelectedTerm(localStorage.getItem('selected_term') || 'trimester1')
+    setAcademicYear(localStorage.getItem('academic_year') || '2026')
+
+    // Get current user role
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        setCurrentUserId(user.id)
+        setIsAdmin(user.app_metadata?.role === 'admin')
+      }
+    })
+
+    fetchUsers()
 
     // Check if a template already exists in storage
     const checkTemplate = async () => {
       const { data } = supabase.storage
-        .from('certificate')
-        .getPublicUrl('certificate-templates/template.pdf')
+        .from('certificates')
+        .getPublicUrl('certificate-template/template.pdf')
       const res = await fetch(data.publicUrl, { method: 'HEAD' })
       setTemplateExists(res.ok)
     }
@@ -45,14 +78,15 @@ export default function SettingsPage() {
 
     setTemplateUploading(true)
     try {
-      const { error } = await supabase.storage
-        .from('certificate')
-        .upload('certificate-templates/template.pdf', file, {
-          contentType: 'application/pdf',
-          upsert: true,
-        })
+      const formData = new FormData()
+      formData.append('file', file)
 
-      if (error) throw error
+      const res = await fetch('/api/upload-template', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!res.ok) throw new Error('Upload failed')
 
       setTemplateExists(true)
       toast.success('Template uploaded successfully')
@@ -64,11 +98,56 @@ export default function SettingsPage() {
     }
   }
 
+  const handleWipeData = async () => {
+    setWiping(true)
+    try {
+      const res = await fetch('/api/wipe-data', { method: 'POST' })
+      if (!res.ok) throw new Error('Wipe failed')
+      toast.success('All student data has been deleted')
+      setShowWipeDialog(false)
+      setWipeConfirmText('')
+    } catch (error) {
+      toast.error('Failed to delete data')
+    } finally {
+      setWiping(false)
+    }
+  }
+
+  const handleDeleteUser = async (userId: string) => {
+    if (!confirm('Remove this facilitator? They will lose access immediately.')) return
+    const res = await fetch(`/api/users/${userId}`, { method: 'DELETE' })
+    const data = await res.json()
+    if (res.ok) {
+      setUsers(prev => prev.filter(u => u.id !== userId))
+      toast.success('User removed successfully')
+    } else {
+      toast.error(data.error || 'Failed to remove user')
+    }
+  }
+
+  const handlePromoteUser = async (userId: string, email: string) => {
+    if (!confirm(`Make ${email} an admin? They will be able to manage and remove other users.`)) return
+    const res = await fetch(`/api/users/${userId}`, { method: 'PATCH' })
+    const data = await res.json()
+    if (res.ok) {
+      setUsers(prev => prev.map(u =>
+        u.id === userId
+          ? { ...u, app_metadata: { ...u.app_metadata, role: 'admin' } }
+          : u
+      ))
+      toast.success(`${email} is now an admin`)
+    } else {
+      toast.error(data.error || 'Failed to promote user')
+    }
+  }
+
   const handleSave = async () => {
     setSaving(true)
     localStorage.setItem('cert_name_x', nameX)
     localStorage.setItem('cert_name_y', nameY)
     localStorage.setItem('cert_name_size', nameFontSize)
+    localStorage.setItem('selected_term', selectedTerm)
+    localStorage.setItem('academic_year', academicYear)
     toast.success('Settings saved')
     setSaving(false)
   }
@@ -84,7 +163,7 @@ export default function SettingsPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="certificates">Certificates</TabsTrigger>
           <TabsTrigger value="attendance">Attendance</TabsTrigger>
@@ -108,16 +187,24 @@ export default function SettingsPage() {
                 placeholder="Enter department name"
               />
               
-              <Input
+              <Select
                 label="Academic Year"
-                defaultValue="2026"
-                placeholder="Enter academic year"
-              />
-              
-              <Select label="Default Term" defaultValue="spring">
-                <SelectItem value="fall">Fall Semester</SelectItem>
-                <SelectItem value="spring">Spring Semester</SelectItem>
-                <SelectItem value="summer">Summer Session</SelectItem>
+                value={academicYear}
+                onValueChange={setAcademicYear}
+              >
+                {[2024, 2025, 2026, 2027, 2028, 2029, 2030].map(y => (
+                  <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                ))}
+              </Select>
+
+              <Select
+                label="Default Term"
+                value={selectedTerm}
+                onValueChange={setSelectedTerm}
+              >
+                <SelectItem value="trimester1">Trimester 1 (January)</SelectItem>
+                <SelectItem value="trimester2">Trimester 2 (May)</SelectItem>
+                <SelectItem value="trimester3">Trimester 3 (September)</SelectItem>
               </Select>
               
               <div className="flex items-center gap-2">
@@ -181,7 +268,7 @@ export default function SettingsPage() {
                   PDF coordinates start from the bottom-left. For a standard Canva certificate, try X: 306, Y: 350.
                   Adjust until the name lands in the right spot, then click Save Changes.
                 </p>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                   <Input
                     label="Center X (points)"
                     type="number"
@@ -265,52 +352,165 @@ export default function SettingsPage() {
         {/* User Management */}
         <TabsContent value="users">
           <Card className="p-6">
-            <h2 className="text-lg font-semibold mb-4">User Management</h2>
-            
-            <div className="mb-4">
-              <Button>Add New User</Button>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">User Management</h2>
+              <div className="flex items-center gap-3">
+                {!isAdmin && (
+                  <span className="text-xs text-gray-500">Only admins can remove users</span>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={fetchUsers}
+                  disabled={usersLoading}
+                >
+                  <RefreshCw size={14} className={`mr-1 ${usersLoading ? 'animate-spin' : ''}`} />
+                  {usersLoading ? 'Loading...' : 'Refresh'}
+                </Button>
+              </div>
             </div>
-            
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Name</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Email</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Role</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Last Active</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  <tr>
-                    <td className="px-4 py-2">Admin User</td>
-                    <td className="px-4 py-2 text-sm">admin@typetech.com</td>
-                    <td className="px-4 py-2">
-                      <Badge variant="success">Admin</Badge>
-                    </td>
-                    <td className="px-4 py-2 text-sm">Just now</td>
-                    <td className="px-4 py-2">
-                      <Button size="sm" variant="ghost">Edit</Button>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="px-4 py-2">Teacher One</td>
-                    <td className="px-4 py-2 text-sm">teacher@typetech.com</td>
-                    <td className="px-4 py-2">
-                      <Badge variant="secondary">Teacher</Badge>
-                    </td>
-                    <td className="px-4 py-2 text-sm">2 hours ago</td>
-                    <td className="px-4 py-2">
-                      <Button size="sm" variant="ghost">Edit</Button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            {users.length === 0 ? (
+              <p className="text-sm text-gray-500">Loading users...</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Email</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Name</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Role</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Last Sign In</th>
+                      {isAdmin && (
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Actions</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {users.map((user) => {
+                      const userIsAdmin = user.app_metadata?.role === 'admin'
+                      const isSelf = user.id === currentUserId
+                      return (
+                        <tr key={user.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 text-sm font-medium">
+                            {user.email}
+                            {isSelf && <span className="ml-2 text-xs text-gray-400">(you)</span>}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {user.user_metadata?.full_name || '—'}
+                          </td>
+                          <td className="px-4 py-3">
+                            {userIsAdmin
+                              ? <Badge variant="success">Admin</Badge>
+                              : <Badge variant="secondary">Facilitator</Badge>
+                            }
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {user.last_sign_in_at
+                              ? new Date(user.last_sign_in_at).toLocaleDateString()
+                              : 'Never'}
+                          </td>
+                          {isAdmin && (
+                            <td className="px-4 py-3">
+                              {!userIsAdmin && !isSelf && (
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => handlePromoteUser(user.id, user.email)}
+                                    className="text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                                  >
+                                    Make Admin
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => handleDeleteUser(user.id)}
+                                    className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                                  >
+                                    <Trash2 size={14} className="mr-1" />
+                                    Remove
+                                  </Button>
+                                </div>
+                              )}
+                            </td>
+                          )}
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Danger Zone */}
+      <div className="border-2 border-red-200 rounded-lg p-6 space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold text-red-700">Danger Zone</h2>
+          <p className="text-sm text-gray-500 mt-1">
+            These actions are irreversible. Proceed with extreme caution.
+          </p>
+        </div>
+        <div className="flex items-center justify-between py-4 border-t border-red-100">
+          <div>
+            <p className="font-medium">Delete all student data</p>
+            <p className="text-sm text-gray-500">
+              Permanently removes all students, attendance records, grades, and certificates. This cannot be undone.
+            </p>
+          </div>
+          <Button
+            variant="destructive"
+            onClick={() => setShowWipeDialog(true)}
+          >
+            <Trash2 size={16} className="mr-2" />
+            Delete All Data
+          </Button>
+        </div>
+      </div>
+
+      {/* Wipe Confirmation Dialog */}
+      <Dialog open={showWipeDialog} onOpenChange={(open) => {
+        setShowWipeDialog(open)
+        if (!open) setWipeConfirmText('')
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-red-700">Delete all student data?</DialogTitle>
+            <DialogDescription>
+              This will permanently delete <strong>all students, attendance records, grades, and certificates</strong> from the system. This action <strong>cannot be undone</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-gray-700">
+              To confirm, type <span className="font-mono font-bold text-red-600">I want to delete</span> below:
+            </p>
+            <input
+              type="text"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+              placeholder="I want to delete"
+              value={wipeConfirmText}
+              onChange={e => setWipeConfirmText(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setShowWipeDialog(false)
+              setWipeConfirmText('')
+            }}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={wipeConfirmText !== 'I want to delete' || wiping}
+              onClick={handleWipeData}
+            >
+              {wiping ? 'Deleting...' : 'Permanently Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

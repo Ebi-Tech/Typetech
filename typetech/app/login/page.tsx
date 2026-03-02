@@ -19,10 +19,16 @@ export default function LoginPage() {
   }, [router])
 
   const handleGoogleLogin = async () => {
+    const params = new URLSearchParams(window.location.search)
+    const inviteToken = params.get('invite')
+    const callbackUrl = inviteToken
+      ? `${window.location.origin}/auth/callback?invite=${inviteToken}`
+      : `${window.location.origin}/auth/callback`
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`
+        redirectTo: callbackUrl
       }
     })
     

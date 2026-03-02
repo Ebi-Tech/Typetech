@@ -2,68 +2,56 @@
 
 import { useState, useEffect } from 'react'
 import { StudentImport } from '@/components/students/StudentImport'
-import { CohortSelector } from '@/components/cohorts/CohortSelector'
 import { useStudents } from '@/hooks/useStudents'
 import { Student } from '@/types/database'
 import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
 import { Dialog } from '@/components/ui/Dialog'
 import { Input } from '@/components/ui/Input'
-import { Select } from '@/components/ui/Select'
+import { Select, SelectItem } from '@/components/ui/Select'
 import { Card } from '@/components/ui/Card'
 import { Plus, Download, ChevronDown, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-
-
 
 export default function StudentsPage() {
   const { students, loading, updateStudent, deleteStudent, refresh } = useStudents()
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [editingStudent, setEditingStudent] = useState<Student | null>(null)
+  const [editCohortId, setEditCohortId] = useState<string>('')
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
-  const [selectedCohort, setSelectedCohort] = useState<string | null>(null)
   const [cohorts, setCohorts] = useState<any[]>([])
   const [expandedCohorts, setExpandedCohorts] = useState<Record<string, boolean>>({})
 
-  // Fetch cohorts
   const fetchCohorts = async () => {
     const { data } = await supabase.from('cohorts').select('*').order('name')
     setCohorts(data || [])
-    
-    // Initialize all cohorts as expanded
     const expanded: Record<string, boolean> = {}
-    data?.forEach(cohort => {
-      expanded[cohort.id] = true
-    })
-    setExpandedCohorts(expanded)
+    data?.forEach(cohort => { expanded[cohort.id] = true })
+    setExpandedCohorts(prev => ({ ...expanded, ...prev }))
   }
 
   useEffect(() => {
     fetchCohorts()
   }, [])
 
-  // Group students by cohort
   const studentsByCohort = cohorts.map(cohort => ({
     ...cohort,
     students: students?.filter(s => s.cohort_id === cohort.id) || []
   }))
 
-  // Add "No Cohort" group
   const noCohortStudents = students?.filter(s => !s.cohort_id) || []
-  
   const allGroups = [
     ...(noCohortStudents.length > 0 ? [{ id: 'none', name: 'No Cohort', students: noCohortStudents }] : []),
     ...studentsByCohort.filter(group => group.students.length > 0)
   ]
 
   const toggleCohort = (cohortId: string) => {
-    setExpandedCohorts(prev => ({
-      ...prev,
-      [cohortId]: !prev[cohortId]
-    }))
+    setExpandedCohorts(prev => ({ ...prev, [cohortId]: !prev[cohortId] }))
   }
 
   const handleEdit = (student: Student) => {
     setEditingStudent(student)
+    setEditCohortId(student.cohort_id || '')
     setIsEditDialogOpen(true)
   }
 
@@ -72,14 +60,10 @@ export default function StudentsPage() {
     if (!editingStudent) return
 
     const formData = new FormData(e.currentTarget)
-    const cohortIdValue = formData.get('cohort_id');
     const updates = {
       name: formData.get('name') as string,
       email: formData.get('email') as string,
-      wpm_score: formData.get('wpm_score') ? Number(formData.get('wpm_score')) : null,
-      curriculum_completed: formData.get('curriculum_completed') === 'true',
-      final_status: formData.get('final_status') as Student['final_status'],
-      cohort_id: cohortIdValue === null || cohortIdValue === '' ? null : String(cohortIdValue),
+      cohort_id: editCohortId || null,
       notes: formData.get('notes') as string,
     }
 
@@ -88,7 +72,7 @@ export default function StudentsPage() {
       setIsEditDialogOpen(false)
       setEditingStudent(null)
     } catch (error) {
-      // Error is handled in hook
+      // Error handled in hook
     }
   }
 
@@ -100,12 +84,13 @@ export default function StudentsPage() {
 
   const handleExport = () => {
     const csv = [
-      ['Name', 'Email', 'Cohort'].join(','),
-      ...students?.map(s => [
-        s.name,
-        s.email,
-        cohorts.find(c => c.id === s.cohort_id)?.name || ''
-      ].join(','))
+      ['Name', 'Email', 'Cohort', 'Final Status'].join(','),
+      ...(students?.map(s => [
+        `"${s.name}"`,
+        `"${s.email}"`,
+        `"${cohorts.find(c => c.id === s.cohort_id)?.name || ''}"`,
+        `"${s.final_status || ''}"`
+      ].join(',')) || [])
     ].join('\n')
 
     const blob = new Blob([csv], { type: 'text/csv' })
@@ -114,6 +99,14 @@ export default function StudentsPage() {
     a.href = url
     a.download = 'students-export.csv'
     a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const statusVariant = (status: string | null) => {
+    if (status === 'Complete') return 'success'
+    if (status === 'Pass') return 'warning'
+    if (status === 'Fail') return 'destructive'
+    return 'secondary'
   }
 
   if (loading) {
@@ -140,20 +133,11 @@ export default function StudentsPage() {
         </div>
       </div>
 
-      {/* Cohort Filter (for quick filtering) */}
-      <div className="flex items-center gap-4 mb-4">
-        <CohortSelector 
-          selectedCohort={selectedCohort}
-          onCohortChange={setSelectedCohort}
-          cohorts={cohorts}
-          onCohortCreated={fetchCohorts}
-        />
-      </div>
-
+      {/* Import Dialog */}
       {isImportDialogOpen && (
         <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
           <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-            <StudentImport />
+            <StudentImport onSuccess={() => { refresh(); setIsImportDialogOpen(false) }} />
             <div className="mt-4 flex justify-end">
               <Button variant="outline" onClick={() => setIsImportDialogOpen(false)}>
                 Close
@@ -165,9 +149,13 @@ export default function StudentsPage() {
 
       {/* Cohort Groups */}
       <div className="space-y-4">
-        {allGroups.map((group) => (
+        {allGroups.length === 0 ? (
+          <Card className="p-8 text-center text-gray-500">
+            No students yet. Use Import Students to add them.
+          </Card>
+        ) : allGroups.map((group) => (
           <Card key={group.id} className="overflow-hidden">
-            <div 
+            <div
               className="px-4 py-3 bg-gray-50 border-b flex items-center justify-between cursor-pointer hover:bg-gray-100"
               onClick={() => toggleCohort(group.id)}
             >
@@ -177,31 +165,31 @@ export default function StudentsPage() {
                 <span className="text-sm text-gray-500">({group.students.length} students)</span>
               </div>
             </div>
-            
+
             {expandedCohorts[group.id] && (
-              <div className="p-4">
+              <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Name</th>
                       <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Email</th>
+                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Status</th>
                       <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
                     {group.students.map((student: Student) => (
                       <tr key={student.id}>
-                        <td className="px-4 py-2">
-                          {student.name}
-                        </td>
+                        <td className="px-4 py-2 font-medium">{student.name}</td>
                         <td className="px-4 py-2 text-sm text-gray-600">{student.email}</td>
                         <td className="px-4 py-2">
-                          <Button size="sm" variant="ghost" onClick={() => handleEdit(student)}>
-                            Edit
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => handleDelete(student.id)}>
-                            Delete
-                          </Button>
+                          <Badge variant={statusVariant(student.final_status)}>
+                            {student.final_status || 'Pending'}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-2">
+                          <Button size="sm" variant="ghost" onClick={() => handleEdit(student)}>Edit</Button>
+                          <Button size="sm" variant="ghost" onClick={() => handleDelete(student.id)}>Delete</Button>
                         </td>
                       </tr>
                     ))}
@@ -217,7 +205,7 @@ export default function StudentsPage() {
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <div className="bg-white rounded-lg p-6 max-w-md w-full">
           <h2 className="text-lg font-semibold mb-4">Edit Student</h2>
-          
+
           {editingStudent && (
             <form onSubmit={handleSaveEdit} className="space-y-4">
               <Input
@@ -226,7 +214,7 @@ export default function StudentsPage() {
                 defaultValue={editingStudent.name}
                 required
               />
-              
+
               <Input
                 name="email"
                 label="Email"
@@ -234,59 +222,27 @@ export default function StudentsPage() {
                 defaultValue={editingStudent.email}
                 required
               />
-              
+
               <Select
-                name="cohort_id"
                 label="Cohort"
-                defaultValue={editingStudent.cohort_id || ''}
+                value={editCohortId || 'none'}
+                onValueChange={val => setEditCohortId(val === 'none' ? '' : val)}
               >
-                <option value="">No Cohort</option>
+                <SelectItem value="none">No Cohort</SelectItem>
                 {cohorts.map((cohort) => (
-                  <option key={cohort.id} value={cohort.id}>{cohort.name}</option>
+                  <SelectItem key={cohort.id} value={cohort.id}>{cohort.name}</SelectItem>
                 ))}
               </Select>
-              
-              <Input
-                name="wpm_score"
-                label="WPM Score"
-                type="number"
-                defaultValue={editingStudent.wpm_score || ''}
-              />
-              
-              <Select
-                name="curriculum_completed"
-                label="Curriculum Completed"
-                defaultValue={String(editingStudent.curriculum_completed)}
-              >
-                <option value="false">No</option>
-                <option value="true">Yes</option>
-              </Select>
-              
-              <Select
-                name="final_status"
-                label="Final Status"
-                defaultValue={editingStudent.final_status}
-                required
-              >
-                <option value="Pending">Pending</option>
-                <option value="Complete">Complete</option>
-                <option value="Pass">Pass</option>
-                <option value="Fail">Fail</option>
-              </Select>
-              
+
               <Input
                 name="notes"
                 label="Notes"
                 defaultValue={editingStudent.notes || ''}
                 placeholder="Additional notes..."
               />
-              
+
               <div className="flex justify-end gap-2 mt-6">
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  onClick={() => setIsEditDialogOpen(false)}
-                >
+                <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
                   Cancel
                 </Button>
                 <Button type="submit">Save Changes</Button>

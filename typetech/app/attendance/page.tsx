@@ -6,7 +6,7 @@ import { CohortSelector } from '@/components/cohorts/CohortSelector'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Select, SelectItem } from '@/components/ui/Select'
-import { ChevronLeft, ChevronRight, Save, Cloud, CheckCircle2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Save, Cloud, CheckCircle2, Download } from 'lucide-react'
 import { AttendanceStatus, TypingStyle } from '@/types/database'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
@@ -186,17 +186,20 @@ export default function AttendancePage() {
 
   const handleTypingStyleChange = async (studentId: string, value: string) => {
     if (value === 'blank-style') return
-    
+
     setTypingStyleData(prev => ({
       ...prev,
       [studentId]: value
     }))
-    
+
     setSyncMessage('Saving...')
     setSyncing(true)
-    
-    const success = await saveWeekData(studentId, currentWeek, { typing_style: value })
-    
+
+    const [success] = await Promise.all([
+      saveWeekData(studentId, currentWeek, { typing_style: value }),
+      supabase.from('students').update({ typing_style: value }).eq('id', studentId)
+    ])
+
     setSyncing(false)
     if (success) {
       setLastSync(new Date())
@@ -217,17 +220,20 @@ export default function AttendancePage() {
 
   const handleGradeChange = async (studentId: string, value: string) => {
     if (value === 'blank-grade') return
-    
+
     setGradeData(prev => ({
       ...prev,
       [studentId]: value
     }))
-    
+
     setSyncMessage('Saving...')
     setSyncing(true)
-    
-    const success = await saveWeekData(studentId, currentWeek, { grade: value })
-    
+
+    const [success] = await Promise.all([
+      saveWeekData(studentId, currentWeek, { grade: value }),
+      supabase.from('students').update({ final_status: value }).eq('id', studentId)
+    ])
+
     setSyncing(false)
     if (success) {
       setLastSync(new Date())
@@ -246,6 +252,72 @@ export default function AttendancePage() {
     }
   }
 
+  const handleExport = async () => {
+    try {
+      // Fetch all students
+      const { data: allStudents } = await supabase
+        .from('students')
+        .select('*')
+        .order('name')
+
+      if (!allStudents || allStudents.length === 0) {
+        toast.error('No students to export')
+        return
+      }
+
+      // Fetch all attendance records across all weeks
+      const { data: allAttendance } = await supabase
+        .from('attendance')
+        .select('*')
+
+      // Find all unique weeks that have recorded data
+      const weeks = [...new Set(allAttendance?.map(a => a.week_number) || [])].sort((a, b) => a - b)
+
+      // Build map: student_id -> week -> status
+      const attendanceMap: Record<string, Record<number, string>> = {}
+      allAttendance?.forEach(record => {
+        if (!attendanceMap[record.student_id]) attendanceMap[record.student_id] = {}
+        attendanceMap[record.student_id][record.week_number] = record.status
+      })
+
+      // Build CSV headers and rows
+      const headers = [
+        'Name', 'Email', 'Cohort',
+        ...weeks.map(w => `Week ${w} Attendance`),
+        'Typing Style', 'Final Status'
+      ]
+
+      const rows = allStudents.map(student => {
+        const cohortName = cohorts.find(c => c.id === student.cohort_id)?.name || '—'
+        const weekCols = weeks.map(w => attendanceMap[student.id]?.[w] || '—')
+        return [
+          student.name,
+          student.email || '—',
+          cohortName,
+          ...weekCols,
+          student.typing_style || '—',
+          student.final_status || '—'
+        ]
+      })
+
+      const csvContent = [headers, ...rows]
+        .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+        .join('\n')
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `typetech_attendance_${new Date().toISOString().split('T')[0]}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+
+      toast.success('Export downloaded')
+    } catch (error) {
+      toast.error('Export failed')
+    }
+  }
+
   const handleManualSave = async () => {
     if (!filteredStudents) return
     
@@ -253,23 +325,31 @@ export default function AttendancePage() {
     try {
       const promises = filteredStudents.map(async (student) => {
         const saves = []
-        
+
         // Save attendance
         const status = attendanceData[student.id]
         if (status) {
           saves.push(saveAttendance(student.id, currentWeek, status))
         }
-        
+
         // Save week data
         const typingStyle = typingStyleData[student.id]
         const grade = gradeData[student.id]
         if (typingStyle || grade) {
-          saves.push(saveWeekData(student.id, currentWeek, { 
-            typing_style: typingStyle, 
-            grade 
+          saves.push(saveWeekData(student.id, currentWeek, {
+            typing_style: typingStyle,
+            grade
           }))
         }
-        
+
+        // Sync to students table so dashboard/certificates reflect changes
+        const studentUpdates: Record<string, string> = {}
+        if (grade) studentUpdates.final_status = grade
+        if (typingStyle) studentUpdates.typing_style = typingStyle
+        if (Object.keys(studentUpdates).length > 0) {
+          saves.push(supabase.from('students').update(studentUpdates).eq('id', student.id))
+        }
+
         return Promise.all(saves)
       })
 
@@ -345,6 +425,10 @@ export default function AttendancePage() {
             onClick={() => setCurrentWeek(currentWeek + 1)}
           >
             <ChevronRight size={16} />
+          </Button>
+          <Button variant="outline" onClick={handleExport}>
+            <Download size={16} className="mr-2" />
+            Export CSV
           </Button>
           <Button onClick={handleManualSave} disabled={saving}>
             <Save size={16} className="mr-2" />

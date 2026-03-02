@@ -13,7 +13,7 @@ interface Cohort {
   name: string
 }
 
-export function StudentImport() {
+export function StudentImport({ onSuccess }: { onSuccess?: () => void }) {
   const [pastedData, setPastedData] = useState('')
   const [parsedStudents, setParsedStudents] = useState<Array<{ name: string; email: string }>>([])
   const [selectedCohort, setSelectedCohort] = useState<string>('cohort-placeholder')
@@ -78,6 +78,7 @@ export function StudentImport() {
     setPastedData('')
     setParsedStudents([])
     setSelectedCohort('cohort-placeholder')
+    onSuccess?.()
   }
 
   const clearAll = () => {

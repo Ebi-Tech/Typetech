@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
-import { Mail, Copy, Send, Plus } from 'lucide-react'
+import { Mail, Copy, Send, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
 
@@ -23,9 +23,13 @@ export default function InvitesPage() {
   const [newInviteEmail, setNewInviteEmail] = useState('')
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
     fetchInvites()
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setIsAdmin(user?.app_metadata?.role === 'admin')
+    })
   }, [])
 
   const fetchInvites = async () => {
@@ -103,6 +107,20 @@ export default function InvitesPage() {
     toast.success('Invite link copied to clipboard')
   }
 
+  const handleDeleteInvite = async (inviteId: string) => {
+    const { error } = await supabase
+      .from('invites')
+      .delete()
+      .eq('id', inviteId)
+
+    if (error) {
+      toast.error('Failed to remove invite')
+      return
+    }
+    setInvites(prev => prev.filter(i => i.id !== inviteId))
+    toast.success('Invite removed from list')
+  }
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'accepted':
@@ -120,25 +138,31 @@ export default function InvitesPage() {
         <h1 className="text-2xl font-bold">Invite Facilitators</h1>
       </div>
 
-      {/* Invite Form */}
-      <Card className="p-6">
-        <h2 className="text-lg font-semibold mb-4">Send New Invite</h2>
-        <div className="flex gap-4">
-          <Input
-            className="flex-1"
-            placeholder="Enter email address (e.g., name@alueducation.com)"
-            value={newInviteEmail}
-            onChange={(e) => setNewInviteEmail(e.target.value)}
-          />
-          <Button onClick={sendInvite} disabled={sending}>
-            <Send size={16} className="mr-2" />
-            {sending ? 'Sending...' : 'Send Invite'}
-          </Button>
-        </div>
-        <p className="text-sm text-gray-500 mt-2">
-          Invite links expire in 7 days. Users with @alueducation.com emails can also sign in directly.
-        </p>
-      </Card>
+      {/* Invite Form — admins only */}
+      {isAdmin ? (
+        <Card className="p-6">
+          <h2 className="text-lg font-semibold mb-4">Send New Invite</h2>
+          <div className="flex gap-4">
+            <Input
+              className="flex-1"
+              placeholder="Enter email address (e.g., name@alueducation.com)"
+              value={newInviteEmail}
+              onChange={(e) => setNewInviteEmail(e.target.value)}
+            />
+            <Button onClick={sendInvite} disabled={sending}>
+              <Send size={16} className="mr-2" />
+              {sending ? 'Sending...' : 'Send Invite'}
+            </Button>
+          </div>
+          <p className="text-sm text-gray-500 mt-2">
+            Invite links expire in 7 days. Users with @alueducation.com emails can also sign in directly.
+          </p>
+        </Card>
+      ) : (
+        <Card className="p-6 bg-gray-50">
+          <p className="text-sm text-gray-500">Only admins can send invites.</p>
+        </Card>
+      )}
 
       {/* Invites List */}
       <Card className="overflow-hidden">
@@ -181,15 +205,29 @@ export default function InvitesPage() {
                       {new Date(invite.expires_at).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4">
-                      {invite.status === 'pending' && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => copyInviteLink(invite.token)}
-                        >
-                          <Copy size={16} />
-                        </Button>
-                      )}
+                      <div className="flex items-center gap-1">
+                        {invite.status === 'pending' && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => copyInviteLink(invite.token)}
+                            title="Copy invite link"
+                          >
+                            <Copy size={16} />
+                          </Button>
+                        )}
+                        {isAdmin && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleDeleteInvite(invite.id)}
+                            className="text-red-500 hover:bg-red-50 hover:text-red-700"
+                            title="Remove from list"
+                          >
+                            <Trash2 size={16} />
+                          </Button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

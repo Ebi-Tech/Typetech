@@ -1,10 +1,12 @@
 import { createServerClient } from '@supabase/ssr'
+import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get('code')
+  const inviteToken = requestUrl.searchParams.get('invite')
 
   if (code) {
     const cookieStore = cookies()
@@ -27,6 +29,19 @@ export async function GET(request: Request) {
     )
 
     await supabase.auth.exchangeCodeForSession(code)
+
+    if (inviteToken) {
+      const supabaseAdmin = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        { auth: { autoRefreshToken: false, persistSession: false } }
+      )
+      await supabaseAdmin
+        .from('invites')
+        .update({ status: 'accepted' })
+        .eq('token', inviteToken)
+        .eq('status', 'pending')
+    }
   }
 
   return NextResponse.redirect(requestUrl.origin)

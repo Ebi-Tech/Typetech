@@ -88,8 +88,8 @@ export default function CertificatesPage() {
     try {
       // Fetch the template from Supabase Storage
       const { data: templateUrlData } = supabase.storage
-        .from('certificate')
-        .getPublicUrl('certificate-templates/template.pdf')
+        .from('certificates')
+        .getPublicUrl('certificate-template/template.pdf')
 
       const templateResponse = await fetch(templateUrlData.publicUrl)
       if (!templateResponse.ok) {
@@ -136,42 +136,33 @@ export default function CertificatesPage() {
       const pdfBytes = await pdfDoc.save()
       const pdfBlob = new Blob([pdfBytes], { type: 'application/pdf' })
 
-      const fileName = `${studentName.replace(/\s+/g, '_')}_Certificate.pdf`
-      const { error } = await supabase.storage
-        .from('certificate')
-        .upload(`${studentId}/${fileName}`, pdfBlob, {
-          contentType: 'application/pdf',
-          upsert: true
-        })
+      const formData = new FormData()
+      formData.append('file', pdfBlob, `${studentName.replace(/\s+/g, '_')}_Certificate.pdf`)
+      formData.append('studentId', studentId)
+      formData.append('studentName', studentName)
 
-      if (error) throw error
+      const res = await fetch('/api/upload-certificate', {
+        method: 'POST',
+        body: formData,
+      })
 
-      const { data: urlData } = supabase.storage
-        .from('certificate')
-        .getPublicUrl(`${studentId}/${fileName}`)
+      if (!res.ok) {
+        const { error } = await res.json()
+        throw new Error(error || 'Upload failed')
+      }
 
-      const { error: dbError } = await supabase
-        .from('certificates')
-        .upsert({
-          student_id: studentId,
-          certificate_url: urlData.publicUrl,
-          generated_at: new Date().toISOString(),
-          email_sent: false,
-          email_attempts: 0
-        })
-
-      if (dbError) throw dbError
+      const { url } = await res.json()
 
       setCertificateStatus(prev => ({
         ...prev,
         [studentId]: {
-          certificate_url: urlData.publicUrl,
+          certificate_url: url,
           generated_at: new Date().toISOString(),
           email_sent: false
         }
       }))
 
-      return urlData.publicUrl
+      return url
     } catch (error) {
       console.error('Error generating certificate:', error)
       throw error

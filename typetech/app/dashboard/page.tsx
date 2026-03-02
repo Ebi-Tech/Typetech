@@ -3,10 +3,10 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useStudents } from '@/hooks/useStudents'
-import { useAttendance } from '@/hooks/useAttendance'
 import { supabase } from '@/lib/supabase'
 import { Card } from '@/components/ui/Card'
-import { Users, Award, Clock, Target } from 'lucide-react'
+import { Badge } from '@/components/ui/Badge'
+import { Users, Award, Clock, XCircle } from 'lucide-react'
 import {
   BarChart,
   Bar,
@@ -23,10 +23,9 @@ import {
 export default function DashboardPage() {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(true)
+  const [cohorts, setCohorts] = useState<any[]>([])
   const { students, loading: studentsLoading } = useStudents()
-  const { getAttendanceSummary } = useAttendance(1)
 
-  // Check for session first
   useEffect(() => {
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession()
@@ -39,6 +38,12 @@ export default function DashboardPage() {
     checkSession()
   }, [router])
 
+  useEffect(() => {
+    supabase.from('cohorts').select('*').order('name').then(({ data }) => {
+      setCohorts(data || [])
+    })
+  }, [])
+
   if (isLoading || studentsLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -47,12 +52,11 @@ export default function DashboardPage() {
     )
   }
 
-  // Rest of your dashboard code...
   const totalStudents = students?.length || 0
   const complete = students?.filter(s => s.final_status === 'Complete').length || 0
   const pass = students?.filter(s => s.final_status === 'Pass').length || 0
   const fail = students?.filter(s => s.final_status === 'Fail').length || 0
-  const pending = students?.filter(s => s.final_status === 'Pending').length || 0
+  const pending = students?.filter(s => !s.final_status || s.final_status === 'Pending').length || 0
   const homerow = students?.filter(s => s.typing_style === 'Homerow').length || 0
 
   const statusData = [
@@ -64,7 +68,7 @@ export default function DashboardPage() {
 
   const styleData = [
     { name: 'Homerow', value: homerow, color: '#3b82f6' },
-    { name: 'Hunting', value: (students?.length || 0) - homerow, color: '#f97316' },
+    { name: 'Hunting', value: totalStudents - homerow, color: '#f97316' },
   ]
 
   const stats = [
@@ -74,10 +78,36 @@ export default function DashboardPage() {
     { title: 'Pending Review', value: pending, icon: Clock, color: 'bg-purple-500' },
   ]
 
+  // Build cohort summary from students data
+  const cohortSummary = cohorts.map(cohort => {
+    const cs = students?.filter(s => s.cohort_id === cohort.id) || []
+    return {
+      name: cohort.name,
+      total: cs.length,
+      complete: cs.filter(s => s.final_status === 'Complete').length,
+      pass: cs.filter(s => s.final_status === 'Pass').length,
+      fail: cs.filter(s => s.final_status === 'Fail').length,
+      pending: cs.filter(s => !s.final_status || s.final_status === 'Pending').length,
+    }
+  })
+
+  const unassigned = students?.filter(s => !s.cohort_id) || []
+  if (unassigned.length > 0) {
+    cohortSummary.push({
+      name: 'No Cohort',
+      total: unassigned.length,
+      complete: unassigned.filter(s => s.final_status === 'Complete').length,
+      pass: unassigned.filter(s => s.final_status === 'Pass').length,
+      fail: unassigned.filter(s => s.final_status === 'Fail').length,
+      pending: unassigned.filter(s => !s.final_status || s.final_status === 'Pending').length,
+    })
+  }
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Dashboard</h1>
-      
+
+      {/* Stat cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((stat, index) => (
           <Card key={index} className="p-6">
@@ -94,6 +124,7 @@ export default function DashboardPage() {
         ))}
       </div>
 
+      {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="p-6">
           <h2 className="text-lg font-semibold mb-4">Status Distribution</h2>
@@ -140,51 +171,47 @@ export default function DashboardPage() {
         </Card>
       </div>
 
+      {/* Cohort Summary */}
       <Card className="p-6">
-        <h2 className="text-lg font-semibold mb-4">Recent Students</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Name</th>
-                <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Email</th>
-                <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Style</th>
-                <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">WPM</th>
-                <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {students?.slice(0, 5).map((student) => (
-                <tr key={student.id}>
-                  <td className="px-4 py-2">{student.name}</td>
-                  <td className="px-4 py-2 text-sm text-gray-600">{student.email}</td>
-                  <td className="px-4 py-2">
-                    {student.typing_style && (
-                      <span className={`px-2 py-1 rounded-full text-xs ${
-                        student.typing_style === 'Homerow' 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-orange-100 text-orange-800'
-                      }`}>
-                        {student.typing_style}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2">{student.wpm_score || '-'}</td>
-                  <td className="px-4 py-2">
-                    <span className={`px-2 py-1 rounded-full text-xs ${
-                      student.final_status === 'Complete' ? 'bg-green-100 text-green-800' :
-                      student.final_status === 'Pass' ? 'bg-yellow-100 text-yellow-800' :
-                      student.final_status === 'Fail' ? 'bg-red-100 text-red-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>
-                      {student.final_status}
-                    </span>
-                  </td>
+        <h2 className="text-lg font-semibold mb-4">Cohort Summary</h2>
+        {cohortSummary.length === 0 ? (
+          <p className="text-sm text-gray-500">No cohorts found.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Cohort</th>
+                  <th className="px-4 py-2 text-center text-sm font-medium text-gray-500">Total</th>
+                  <th className="px-4 py-2 text-center text-sm font-medium text-gray-500">Complete</th>
+                  <th className="px-4 py-2 text-center text-sm font-medium text-gray-500">Pass</th>
+                  <th className="px-4 py-2 text-center text-sm font-medium text-gray-500">Fail</th>
+                  <th className="px-4 py-2 text-center text-sm font-medium text-gray-500">Pending</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {cohortSummary.map((row) => (
+                  <tr key={row.name} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium">{row.name}</td>
+                    <td className="px-4 py-3 text-center">{row.total}</td>
+                    <td className="px-4 py-3 text-center">
+                      {row.complete > 0 ? <Badge variant="success">{row.complete}</Badge> : <span className="text-gray-400">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      {row.pass > 0 ? <Badge variant="warning">{row.pass}</Badge> : <span className="text-gray-400">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      {row.fail > 0 ? <Badge variant="destructive">{row.fail}</Badge> : <span className="text-gray-400">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      {row.pending > 0 ? <Badge variant="secondary">{row.pending}</Badge> : <span className="text-gray-400">—</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
     </div>
   )
