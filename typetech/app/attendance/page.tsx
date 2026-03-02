@@ -11,6 +11,11 @@ import { AttendanceStatus, TypingStyle } from '@/types/database'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
 
+interface Cohort {
+  id: string
+  name: string
+}
+
 interface WeekData {
   student_id: string
   typing_style?: string
@@ -24,7 +29,7 @@ export default function AttendancePage() {
   const [gradeData, setGradeData] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
   const [selectedCohort, setSelectedCohort] = useState<string | null>(null)
-  const [cohorts, setCohorts] = useState<any[]>([])
+  const [cohorts, setCohorts] = useState<Cohort[]>([])
   const [syncMessage, setSyncMessage] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [lastSync, setLastSync] = useState<Date | null>(null)

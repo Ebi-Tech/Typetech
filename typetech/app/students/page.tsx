@@ -13,13 +13,18 @@ import { Card } from '@/components/ui/Card'
 import { Plus, Download, ChevronDown, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
+interface Cohort {
+  id: string
+  name: string
+}
+
 export default function StudentsPage() {
   const { students, loading, updateStudent, deleteStudent, refresh } = useStudents()
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [editingStudent, setEditingStudent] = useState<Student | null>(null)
   const [editCohortId, setEditCohortId] = useState<string>('')
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
-  const [cohorts, setCohorts] = useState<any[]>([])
+  const [cohorts, setCohorts] = useState<Cohort[]>([])
   const [expandedCohorts, setExpandedCohorts] = useState<Record<string, boolean>>({})
 
   const fetchCohorts = async () => {

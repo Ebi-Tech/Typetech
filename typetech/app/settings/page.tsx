@@ -11,6 +11,7 @@ import { Save, Upload, CheckCircle, Trash2, RefreshCw } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
+import type { User } from '@supabase/supabase-js'
 
 export default function SettingsPage() {
   const [saving, setSaving] = useState(false)
@@ -26,7 +27,7 @@ export default function SettingsPage() {
   const [nameFontSize, setNameFontSize] = useState('36')
   const [selectedTerm, setSelectedTerm] = useState('trimester1')
   const [academicYear, setAcademicYear] = useState('2026')
-  const [users, setUsers] = useState<any[]>([])
+  const [users, setUsers] = useState<User[]>([])
   const [usersLoading, setUsersLoading] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)

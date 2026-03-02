@@ -12,6 +12,19 @@ import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
 
+interface Cohort {
+  id: string
+  name: string
+}
+
+interface CertStatus {
+  certificate_url: string | null
+  generated_at: string | null
+  email_sent: boolean
+  email_sent_at?: string | null
+  email_attempts?: number
+}
+
 export default function CertificatesPage() {
   const { students, refresh } = useStudents()
   const [selectedStudents, setSelectedStudents] = useState<string[]>([])
@@ -19,8 +32,8 @@ export default function CertificatesPage() {
   const [sending, setSending] = useState(false)
   const [filter, setFilter] = useState('all')
   const [selectedCohort, setSelectedCohort] = useState<string | null>(null)
-  const [cohorts, setCohorts] = useState<any[]>([])
-  const [certificateStatus, setCertificateStatus] = useState<Record<string, any>>({})
+  const [cohorts, setCohorts] = useState<Cohort[]>([])
+  const [certificateStatus, setCertificateStatus] = useState<Record<string, CertStatus>>({})
 
   // Fetch cohorts
   const fetchCohorts = async () => {
@@ -57,7 +70,7 @@ export default function CertificatesPage() {
         .in('student_id', filteredStudents.map(s => s.id))
 
       if (data) {
-        const statusMap: Record<string, any> = {}
+        const statusMap: Record<string, CertStatus> = {}
         data.forEach(cert => {
           statusMap[cert.student_id] = cert
         })
@@ -134,7 +147,7 @@ export default function CertificatesPage() {
       }
 
       const pdfBytes = await pdfDoc.save()
-      const pdfBlob = new Blob([pdfBytes], { type: 'application/pdf' })
+      const pdfBlob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' })
 
       const formData = new FormData()
       formData.append('file', pdfBlob, `${studentName.replace(/\s+/g, '_')}_Certificate.pdf`)
@@ -462,7 +475,7 @@ export default function CertificatesPage() {
                         >
                           <Eye size={16} />
                         </Button>
-                        {certificateStatus[student.id]?.email_attempts > 0 && (
+                        {(certificateStatus[student.id]?.email_attempts ?? 0) > 0 && (
                           <Badge variant="secondary" className="text-xs">
                             {certificateStatus[student.id].email_attempts} attempts
                           </Badge>
