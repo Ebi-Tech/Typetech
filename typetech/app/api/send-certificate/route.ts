@@ -26,14 +26,15 @@ export async function POST(request: Request) {
     await transporter.sendMail({
       from: process.env.SMTP_FROM_EMAIL,
       to: studentEmail,
-      subject: 'Your Typing Class Certificate of Completion',
+      subject: 'Congratulations! Your Typing Class Certificate',
       html: `
         <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
           <h2 style="color: #2563eb;">Congratulations, ${studentName}!</h2>
-          <p>Your certificate of completion for the Typetech Typing Class is attached to this email.</p>
-          <p>Well done on completing the course!</p>
+          <p>Your certificate of completion for the Typing Class is attached to this email.</p>
+          <p>Well done on completing the curriculum and meeting the requirements of 40 WPM!</p>
           <p style="margin-top: 24px; color: #6b7280; font-size: 13px;">
-            Typetech — ALU Typing Class
+            Keeping improving yourself!<BR />
+            Turikumwe 🎉
           </p>
         </div>
       `,
