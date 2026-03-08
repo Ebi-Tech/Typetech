@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Select, SelectItem } from '@/components/ui/Select'
 import { useStudents } from '@/hooks/useStudents'
-import { Upload, X } from 'lucide-react'
+import { Upload, X, Plus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
 
@@ -19,13 +19,40 @@ export function StudentImport({ onSuccess }: { onSuccess?: () => void }) {
   const [selectedCohort, setSelectedCohort] = useState<string>('cohort-placeholder')
   const [cohorts, setCohorts] = useState<Cohort[]>([])
   const [skippedStudents, setSkippedStudents] = useState<Array<{ name: string; email: string }>>([])
+  const [isCreatingCohort, setIsCreatingCohort] = useState(false)
+  const [newCohortName, setNewCohortName] = useState('')
   const { importStudents, loading } = useStudents()
 
-  useEffect(() => {
+  const refreshCohorts = () => {
     supabase.from('cohorts').select('id, name').order('name').then(({ data }) => {
       setCohorts(data || [])
     })
+  }
+
+  useEffect(() => {
+    refreshCohorts()
   }, [])
+
+  const handleCreateCohort = async () => {
+    if (!newCohortName.trim()) {
+      toast.error('Cohort name is required')
+      return
+    }
+    const { data, error } = await supabase
+      .from('cohorts')
+      .insert([{ name: newCohortName.trim() }])
+      .select()
+      .single()
+    if (error) {
+      toast.error('Failed to create cohort')
+      return
+    }
+    toast.success('Cohort created')
+    setNewCohortName('')
+    setIsCreatingCohort(false)
+    refreshCohorts()
+    setSelectedCohort(data.id)
+  }
 
   const parsePastedData = () => {
     try {
@@ -95,20 +122,46 @@ export function StudentImport({ onSuccess }: { onSuccess?: () => void }) {
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Select Cohort <span className="text-red-500">*</span>
           </label>
-          <Select
-            value={selectedCohort}
-            onValueChange={setSelectedCohort}
-          >
-            <SelectItem value="cohort-placeholder">Select a cohort</SelectItem>
-            {cohorts.map((cohort) => (
-              <SelectItem key={cohort.id} value={cohort.id}>
-                {cohort.name}
-              </SelectItem>
-            ))}
-          </Select>
-          {(!selectedCohort || selectedCohort === 'cohort-placeholder') && (
-            <p className="text-xs text-red-500 mt-1">Cohort is required</p>
-          )}
+          <div className="flex items-start gap-2">
+            <div className="flex-1">
+              <Select
+                value={selectedCohort}
+                onValueChange={setSelectedCohort}
+              >
+                <SelectItem value="cohort-placeholder">Select a cohort</SelectItem>
+                {cohorts.map((cohort) => (
+                  <SelectItem key={cohort.id} value={cohort.id}>
+                    {cohort.name}
+                  </SelectItem>
+                ))}
+              </Select>
+              {(!selectedCohort || selectedCohort === 'cohort-placeholder') && (
+                <p className="text-xs text-red-500 mt-1">Cohort is required</p>
+              )}
+            </div>
+            {!isCreatingCohort ? (
+              <Button variant="outline" size="sm" onClick={() => setIsCreatingCohort(true)} className="shrink-0 mt-0.5">
+                <Plus size={14} className="mr-1" />
+                New Cohort
+              </Button>
+            ) : (
+              <div className="flex gap-1.5 shrink-0 mt-0.5">
+                <input
+                  type="text"
+                  value={newCohortName}
+                  onChange={e => setNewCohortName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleCreateCohort(); if (e.key === 'Escape') setIsCreatingCohort(false) }}
+                  placeholder="Cohort name"
+                  autoFocus
+                  className="px-2 py-1 text-sm border border-gray-300 rounded-md w-32 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <Button size="sm" onClick={handleCreateCohort}>Add</Button>
+                <Button size="sm" variant="ghost" onClick={() => { setIsCreatingCohort(false); setNewCohortName('') }}>
+                  <X size={14} />
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
 
         <div>

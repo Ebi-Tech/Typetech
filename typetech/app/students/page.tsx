@@ -10,8 +10,9 @@ import { Dialog } from '@/components/ui/Dialog'
 import { Input } from '@/components/ui/Input'
 import { Select, SelectItem } from '@/components/ui/Select'
 import { Card } from '@/components/ui/Card'
-import { Plus, Download, ChevronDown, ChevronRight } from 'lucide-react'
+import { Plus, Download, ChevronDown, ChevronRight, Search, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { CohortSelector } from '@/components/cohorts/CohortSelector'
 
 interface Cohort {
   id: string
@@ -26,16 +27,17 @@ export default function StudentsPage() {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [cohorts, setCohorts] = useState<Cohort[]>([])
   const [expandedCohorts, setExpandedCohorts] = useState<Record<string, boolean>>({})
+  const [selectedCohort, setSelectedCohort] = useState<string | null>(null)
+  const [studentSearch, setStudentSearch] = useState('')
+
+  const fetchCohorts = async () => {
+    const { data } = await supabase.from('cohorts').select('*').order('name')
+    setCohorts(data || [])
+    // Leave all cohorts collapsed by default
+  }
 
   useEffect(() => {
-    const loadCohorts = async () => {
-      const { data } = await supabase.from('cohorts').select('*').order('name')
-      setCohorts(data || [])
-      const expanded: Record<string, boolean> = {}
-      data?.forEach(cohort => { expanded[cohort.id] = true })
-      setExpandedCohorts(prev => ({ ...expanded, ...prev }))
-    }
-    loadCohorts()
+    fetchCohorts()
   }, [])
 
   const studentsByCohort = cohorts.map(cohort => ({
@@ -48,6 +50,15 @@ export default function StudentsPage() {
     ...(noCohortStudents.length > 0 ? [{ id: 'none', name: 'No Cohort', students: noCohortStudents }] : []),
     ...studentsByCohort.filter(group => group.students.length > 0)
   ]
+
+  const searchQ = studentSearch.trim().toLowerCase()
+
+  const visibleGroups = (selectedCohort ? allGroups.filter(g => g.id === selectedCohort) : allGroups)
+    .map(g => ({
+      ...g,
+      students: searchQ ? g.students.filter((s: Student) => s.name.toLowerCase().includes(searchQ)) : g.students
+    }))
+    .filter(g => g.students.length > 0)
 
   const toggleCohort = (cohortId: string) => {
     setExpandedCohorts(prev => ({ ...prev, [cohortId]: !prev[cohortId] }))
@@ -151,26 +162,54 @@ export default function StudentsPage() {
         </Dialog>
       )}
 
+      {/* Cohort Filter + Search */}
+      <div className="flex items-center gap-4 flex-wrap">
+        <CohortSelector
+          selectedCohort={selectedCohort}
+          onCohortChange={setSelectedCohort}
+          cohorts={cohorts}
+          onCohortCreated={fetchCohorts}
+        />
+        <div className="relative min-w-[200px] max-w-xs">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search student..."
+            value={studentSearch}
+            onChange={e => setStudentSearch(e.target.value)}
+            className="w-full pl-9 pr-8 h-10 rounded-md border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          {studentSearch && (
+            <button
+              onClick={() => setStudentSearch('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Cohort Groups */}
       <div className="space-y-4">
-        {allGroups.length === 0 ? (
+        {visibleGroups.length === 0 ? (
           <Card className="p-8 text-center text-gray-500">
             No students yet. Use Import Students to add them.
           </Card>
-        ) : allGroups.map((group) => (
+        ) : visibleGroups.map((group) => (
           <Card key={group.id} className="overflow-hidden">
             <div
               className="px-4 py-3 bg-gray-50 border-b flex items-center justify-between cursor-pointer hover:bg-gray-100"
               onClick={() => toggleCohort(group.id)}
             >
               <div className="flex items-center gap-2">
-                {expandedCohorts[group.id] ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+                {(expandedCohorts[group.id] || !!searchQ) ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
                 <h2 className="font-semibold">{group.name}</h2>
                 <span className="text-sm text-gray-500">({group.students.length} students)</span>
               </div>
             </div>
 
-            {expandedCohorts[group.id] && (
+            {(expandedCohorts[group.id] || !!searchQ) && (
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-gray-50">
