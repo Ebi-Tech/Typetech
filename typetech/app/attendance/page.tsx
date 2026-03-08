@@ -6,7 +6,7 @@ import { CohortSelector } from '@/components/cohorts/CohortSelector'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Select, SelectItem } from '@/components/ui/Select'
-import { ChevronLeft, ChevronRight, Save, Cloud, CheckCircle2, Download } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Save, Cloud, CheckCircle2, Download, Search, X } from 'lucide-react'
 import { AttendanceStatus } from '@/types/database'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
@@ -27,6 +27,7 @@ export default function AttendancePage() {
   const [cohorts, setCohorts] = useState<Cohort[]>([])
   const [syncing, setSyncing] = useState(false)
   const [lastSync, setLastSync] = useState<Date | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
   
   const { students, loading: studentsLoading } = useStudents()
 
@@ -49,6 +50,13 @@ export default function AttendancePage() {
     () => selectedCohort ? students?.filter(s => s.cohort_id === selectedCohort) : students,
     [students, selectedCohort]
   )
+
+  // Further filter by search query for table display only (summary cards use filteredStudents)
+  const displayedStudents = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return filteredStudents
+    return filteredStudents?.filter(s => s.name.toLowerCase().includes(q))
+  }, [filteredStudents, searchQuery])
 
   // Load ALL week-specific data for current week
   useEffect(() => {
@@ -444,14 +452,32 @@ export default function AttendancePage() {
         </div>
       </div>
 
-      {/* Cohort Filter */}
-      <div className="flex items-center gap-4 mb-4">
-        <CohortSelector 
+      {/* Cohort Filter + Search */}
+      <div className="flex items-center gap-4 mb-4 flex-wrap">
+        <CohortSelector
           selectedCohort={selectedCohort}
           onCohortChange={setSelectedCohort}
           cohorts={cohorts}
           onCohortCreated={fetchCohorts}
         />
+        <div className="relative flex-1 min-w-[200px] max-w-xs">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search student..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-8 h-10 rounded-md border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -540,7 +566,7 @@ export default function AttendancePage() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredStudents?.map((student) => (
+              {displayedStudents?.map((student) => (
                 <tr key={student.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap font-medium">
                     {student.name}

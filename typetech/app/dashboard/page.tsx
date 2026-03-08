@@ -18,7 +18,8 @@ import {
   ResponsiveContainer,
   PieChart,
   Pie,
-  Cell
+  Cell,
+  Legend,
 } from 'recharts'
 
 interface Cohort {
@@ -133,40 +134,53 @@ export default function DashboardPage() {
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="p-6">
-          <h2 className="text-lg font-semibold mb-4">Status Distribution</h2>
-          <div className="h-80">
+          <h2 className="text-lg font-semibold mb-1">Status Distribution</h2>
+          <p className="text-xs text-gray-400 mb-3">Final outcomes across all students</p>
+          <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
                   data={statusData}
                   cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
-                  outerRadius={80}
-                  fill="#8884d8"
+                  cy="45%"
+                  innerRadius={55}
+                  outerRadius={90}
+                  paddingAngle={3}
                   dataKey="value"
                 >
                   {statusData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
+                    <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
                   ))}
                 </Pie>
-                <Tooltip />
+                <Tooltip
+                  formatter={(value: number, name: string) => [value, name]}
+                  contentStyle={{ borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 13 }}
+                />
+                <Legend
+                  iconType="circle"
+                  iconSize={10}
+                  formatter={(value) => <span style={{ color: '#374151', fontSize: 13 }}>{value}</span>}
+                />
               </PieChart>
             </ResponsiveContainer>
           </div>
         </Card>
 
         <Card className="p-6">
-          <h2 className="text-lg font-semibold mb-4">Typing Style Distribution</h2>
-          <div className="h-80">
+          <h2 className="text-lg font-semibold mb-1">Typing Style Distribution</h2>
+          <p className="text-xs text-gray-400 mb-3">Current typing style across all students</p>
+          <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={styleData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="value">
+              <BarChart data={styleData} barCategoryGap="40%">
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                <XAxis dataKey="name" tick={{ fontSize: 13, fill: '#374151' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 12, fill: '#9ca3af' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <Tooltip
+                  cursor={{ fill: '#f9fafb' }}
+                  contentStyle={{ borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 13 }}
+                  formatter={(value: number) => [value, 'Students']}
+                />
+                <Bar dataKey="value" radius={[6, 6, 0, 0]}>
                   {styleData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
