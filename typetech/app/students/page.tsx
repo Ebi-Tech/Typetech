@@ -152,7 +152,10 @@ export default function StudentsPage() {
       {isImportDialogOpen && (
         <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
           <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-            <StudentImport onSuccess={() => { refresh(); setIsImportDialogOpen(false) }} />
+            <StudentImport
+              onRefresh={() => { refresh(); fetchCohorts() }}
+              onSuccess={() => setIsImportDialogOpen(false)}
+            />
             <div className="mt-4 flex justify-end">
               <Button variant="outline" onClick={() => setIsImportDialogOpen(false)}>
                 Close

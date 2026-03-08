@@ -13,7 +13,7 @@ interface Cohort {
   name: string
 }
 
-export function StudentImport({ onSuccess }: { onSuccess?: () => void }) {
+export function StudentImport({ onSuccess, onRefresh }: { onSuccess?: () => void; onRefresh?: () => void }) {
   const [pastedData, setPastedData] = useState('')
   const [parsedStudents, setParsedStudents] = useState<Array<{ name: string; email: string }>>([])
   const [selectedCohort, setSelectedCohort] = useState<string>('cohort-placeholder')
@@ -52,6 +52,7 @@ export function StudentImport({ onSuccess }: { onSuccess?: () => void }) {
     setIsCreatingCohort(false)
     refreshCohorts()
     setSelectedCohort(data.id)
+    onRefresh?.() // Let parent know a new cohort exists
   }
 
   const parsePastedData = () => {
@@ -101,7 +102,8 @@ export function StudentImport({ onSuccess }: { onSuccess?: () => void }) {
     setPastedData('')
     setParsedStudents([])
     setSelectedCohort('cohort-placeholder')
-    if ((result?.skipped ?? []).length === 0) onSuccess?.()
+    onRefresh?.() // Always refresh parent data (students + cohorts)
+    if ((result?.skipped ?? []).length === 0) onSuccess?.() // Close dialog only when fully clean
   }
 
   const clearAll = () => {
