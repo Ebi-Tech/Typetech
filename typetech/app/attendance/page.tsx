@@ -414,10 +414,19 @@ export default function AttendancePage() {
           >
             <ChevronLeft size={16} />
           </Button>
-          <span className="font-semibold text-lg">Week {currentWeek}</span>
+          <select
+            value={currentWeek}
+            onChange={(e) => setCurrentWeek(Number(e.target.value))}
+            className="h-10 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+          >
+            {Array.from({ length: 11 }, (_, i) => (
+              <option key={i + 1} value={i + 1}>Week {i + 1}</option>
+            ))}
+          </select>
           <Button
             variant="outline"
             onClick={() => setCurrentWeek(currentWeek + 1)}
+            disabled={currentWeek === 11}
           >
             <ChevronRight size={16} />
           </Button>

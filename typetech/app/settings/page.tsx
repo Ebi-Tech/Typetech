@@ -83,6 +83,32 @@ export default function SettingsPage() {
     checkTemplate()
   }, [])
 
+  // Auto-refresh user list when an invite is accepted or when admin returns to tab
+  useEffect(() => {
+    const channel = supabase
+      .channel('settings-users-refresh')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'invites' },
+        (payload) => {
+          if (payload.new?.status === 'accepted') {
+            fetchUsers()
+          }
+        }
+      )
+      .subscribe()
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') fetchUsers()
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    return () => {
+      supabase.removeChannel(channel)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [])
+
   const handleTemplateUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
