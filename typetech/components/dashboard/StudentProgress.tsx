@@ -7,8 +7,9 @@ import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Search } from 'lucide-react'
 import {
-  BarChart,
+  ComposedChart,
   Bar,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -37,6 +38,8 @@ interface TooltipPayload {
     attendance: string | null
     typingStyle: string | null
     grade: string | null
+    attValue: number
+    styleValue: number | null
   }
 }
 
@@ -117,15 +120,17 @@ export function StudentProgress({ students, cohorts }: Props) {
   const late = WEEKS.filter(w => attendance[w] === 'Late').length
   const attendanceRate = Math.round((present + late * 0.5) / 11 * 100)
 
-  // Chart data
+  // Chart data — attValue on left axis (0-3), styleValue on right axis (0=Hunting, 1=Homerow)
   const chartData = WEEKS.map(week => {
     const att = attendance[week] ?? null
     const wd = weekData[week] ?? null
+    const style = wd?.typing_style ?? null
     return {
       week: `W${week}`,
-      value: att === 'Present' ? 3 : att === 'Late' ? 2 : att === 'Absent' ? 1 : 0,
+      attValue: att === 'Present' ? 3 : att === 'Late' ? 2 : att === 'Absent' ? 1 : 0,
+      styleValue: style === 'Homerow' ? 1 : style === 'Hunting' ? 0 : null,
       attendance: att,
-      typingStyle: wd?.typing_style ?? null,
+      typingStyle: style,
       grade: wd?.grade ?? null,
       fill: att === 'Present' ? '#22c55e' : att === 'Late' ? '#eab308' : att === 'Absent' ? '#ef4444' : '#e5e7eb',
     }
@@ -250,28 +255,51 @@ export function StudentProgress({ students, cohorts }: Props) {
             )}
           </div>
 
-          {/* Attendance chart */}
+          {/* Attendance + Typing Style chart */}
           <div>
-            <p className="text-sm font-medium text-gray-700 mb-1">Weekly Attendance</p>
-            <div className="flex gap-3 text-xs text-gray-500 mb-3">
+            <p className="text-sm font-medium text-gray-700 mb-1">Weekly Attendance & Typing Style</p>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 mb-3">
               <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-green-500 inline-block" />Present</span>
               <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-yellow-400 inline-block" />Late</span>
               <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-500 inline-block" />Absent</span>
               <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-gray-200 inline-block" />No data</span>
+              <span className="flex items-center gap-1">
+                <svg width="20" height="10"><line x1="0" y1="5" x2="20" y2="5" stroke="#6366f1" strokeWidth="2"/><circle cx="10" cy="5" r="3" fill="#6366f1"/></svg>
+                Typing style (Hunting → Homerow)
+              </span>
             </div>
-            <div className="h-48">
+            <div className="h-56">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} barCategoryGap="20%">
+                <ComposedChart data={chartData} barCategoryGap="20%">
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="week" tick={{ fontSize: 12 }} />
-                  <YAxis hide domain={[0, 3]} />
+                  <YAxis yAxisId="att" hide domain={[0, 3]} />
+                  <YAxis
+                    yAxisId="style"
+                    orientation="right"
+                    domain={[-0.3, 1.3]}
+                    ticks={[0, 1]}
+                    tickFormatter={v => v === 0 ? 'Hunting' : 'Homerow'}
+                    tick={{ fontSize: 11, fill: '#6366f1' }}
+                    width={62}
+                  />
                   <Tooltip content={<AttendanceTooltip />} />
-                  <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                  <Bar yAxisId="att" dataKey="attValue" radius={[4, 4, 0, 0]}>
                     {chartData.map((entry, i) => (
                       <Cell key={i} fill={entry.fill} />
                     ))}
                   </Bar>
-                </BarChart>
+                  <Line
+                    yAxisId="style"
+                    type="stepAfter"
+                    dataKey="styleValue"
+                    stroke="#6366f1"
+                    strokeWidth={2.5}
+                    dot={{ fill: '#6366f1', r: 4, strokeWidth: 0 }}
+                    activeDot={{ r: 6 }}
+                    connectNulls={false}
+                  />
+                </ComposedChart>
               </ResponsiveContainer>
             </div>
           </div>

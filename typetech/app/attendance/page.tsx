@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useStudents } from '@/hooks/useStudents'
 import { CohortSelector } from '@/components/cohorts/CohortSelector'
 import { Button } from '@/components/ui/Button'
@@ -42,10 +42,13 @@ export default function AttendancePage() {
     })
   }, [])
 
-  // Filter students by cohort
-  const filteredStudents = selectedCohort
-    ? students?.filter(s => s.cohort_id === selectedCohort)
-    : students
+  // Filter students by cohort — memoized so the reference only changes when
+  // students or selectedCohort actually change, preventing the fetch useEffect
+  // from looping (new array reference on every render was re-triggering it)
+  const filteredStudents = useMemo(
+    () => selectedCohort ? students?.filter(s => s.cohort_id === selectedCohort) : students,
+    [students, selectedCohort]
+  )
 
   // Load ALL week-specific data for current week
   useEffect(() => {
