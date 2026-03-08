@@ -18,6 +18,7 @@ export function StudentImport({ onSuccess }: { onSuccess?: () => void }) {
   const [parsedStudents, setParsedStudents] = useState<Array<{ name: string; email: string }>>([])
   const [selectedCohort, setSelectedCohort] = useState<string>('cohort-placeholder')
   const [cohorts, setCohorts] = useState<Cohort[]>([])
+  const [skippedStudents, setSkippedStudents] = useState<Array<{ name: string; email: string }>>([])
   const { importStudents, loading } = useStudents()
 
   useEffect(() => {
@@ -67,18 +68,20 @@ export function StudentImport({ onSuccess }: { onSuccess?: () => void }) {
     
     const names = parsedStudents.map(s => s.name)
     const emails = parsedStudents.map(s => s.email)
-    
-    await importStudents(names, emails, selectedCohort)
+
+    const result = await importStudents(names, emails, selectedCohort)
+    setSkippedStudents(result?.skipped ?? [])
     setPastedData('')
     setParsedStudents([])
     setSelectedCohort('cohort-placeholder')
-    onSuccess?.()
+    if ((result?.skipped ?? []).length === 0) onSuccess?.()
   }
 
   const clearAll = () => {
     setPastedData('')
     setParsedStudents([])
     setSelectedCohort('cohort-placeholder')
+    setSkippedStudents([])
   }
 
   const isImportDisabled = !selectedCohort || selectedCohort === 'cohort-placeholder' || parsedStudents.length === 0
@@ -171,6 +174,41 @@ export function StudentImport({ onSuccess }: { onSuccess?: () => void }) {
               {isImportDisabled && (
                 <p className="text-xs text-red-500 mt-2">Select a cohort to enable import</p>
               )}
+            </div>
+          </div>
+        )}
+
+        {skippedStudents.length > 0 && (
+          <div className="border border-yellow-300 rounded-lg overflow-hidden bg-yellow-50">
+            <div className="px-4 py-3 border-b border-yellow-300">
+              <p className="text-sm font-semibold text-yellow-800">
+                {skippedStudents.length} student{skippedStudents.length > 1 ? 's' : ''} skipped — email already exists in the system
+              </p>
+              <p className="text-xs text-yellow-700 mt-0.5">These were not imported. If they belong to a different cohort, edit them manually in the Students page.</p>
+            </div>
+            <table className="min-w-full divide-y divide-yellow-200">
+              <thead className="bg-yellow-100">
+                <tr>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-yellow-700 uppercase">Name</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-yellow-700 uppercase">Email</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-yellow-200">
+                {skippedStudents.map((s, i) => (
+                  <tr key={i} className="bg-yellow-50">
+                    <td className="px-4 py-2 text-sm text-yellow-900">{s.name}</td>
+                    <td className="px-4 py-2 text-sm text-yellow-900 font-mono">{s.email}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="px-4 py-2 border-t border-yellow-300">
+              <button
+                onClick={() => setSkippedStudents([])}
+                className="text-xs text-yellow-700 hover:text-yellow-900 underline"
+              >
+                Dismiss
+              </button>
             </div>
           </div>
         )}

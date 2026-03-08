@@ -81,28 +81,42 @@ export function useStudents() {
 
   const importStudents = async (names: string[], emails: string[], cohortId?: string) => {
     try {
-      const studentsToInsert = names.map((name, index) => ({
+      const allStudents = names.map((name, index) => ({
         name,
         email: emails[index],
         final_status: 'Pending',
         cohort_id: cohortId || null
       }))
 
-      const { data, error } = await supabase
+      // Pre-check which emails already exist
+      const { data: existing } = await supabase
         .from('students')
-        .upsert(studentsToInsert, { onConflict: 'email', ignoreDuplicates: true })
-        .select()
+        .select('email')
+        .in('email', emails)
 
-      if (error) throw error
-      await fetchStudents() // Refresh the list
-      const inserted = data?.length ?? 0
-      const skipped = studentsToInsert.length - inserted
-      if (skipped > 0) {
-        toast.success(`${inserted} students imported (${skipped} already existed, skipped)`)
-      } else {
-        toast.success(`${inserted} students imported successfully`)
+      const existingEmails = new Set((existing || []).map(r => r.email))
+      const skipped = allStudents.filter(s => existingEmails.has(s.email))
+      const toInsert = allStudents.filter(s => !existingEmails.has(s.email))
+
+      let inserted: Student[] = []
+      if (toInsert.length > 0) {
+        const { data, error } = await supabase
+          .from('students')
+          .insert(toInsert)
+          .select()
+        if (error) throw error
+        inserted = data || []
       }
-      return data
+
+      await fetchStudents()
+
+      if (skipped.length > 0) {
+        toast.success(`${inserted.length} imported, ${skipped.length} skipped (already exist)`, { duration: 5000 })
+      } else {
+        toast.success(`${inserted.length} students imported successfully`)
+      }
+
+      return { inserted, skipped }
     } catch (err) {
       toast.error('Failed to import students')
       throw err
