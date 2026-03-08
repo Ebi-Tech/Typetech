@@ -90,12 +90,18 @@ export function useStudents() {
 
       const { data, error } = await supabase
         .from('students')
-        .insert(studentsToInsert)
+        .upsert(studentsToInsert, { onConflict: 'email', ignoreDuplicates: true })
         .select()
 
       if (error) throw error
       await fetchStudents() // Refresh the list
-      toast.success(`${data.length} students imported successfully`)
+      const inserted = data?.length ?? 0
+      const skipped = studentsToInsert.length - inserted
+      if (skipped > 0) {
+        toast.success(`${inserted} students imported (${skipped} already existed, skipped)`)
+      } else {
+        toast.success(`${inserted} students imported successfully`)
+      }
       return data
     } catch (err) {
       toast.error('Failed to import students')
