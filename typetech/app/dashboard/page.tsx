@@ -6,7 +6,8 @@ import { useStudents } from '@/hooks/useStudents'
 import { supabase } from '@/lib/supabase'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
-import { Users, Award, Clock} from 'lucide-react'
+import { Users, Award, Clock } from 'lucide-react'
+import { StudentProgress } from '@/components/dashboard/StudentProgress'
 import {
   BarChart,
   Bar,
@@ -218,6 +219,11 @@ export default function DashboardPage() {
           </div>
         )}
       </Card>
+      {/* Student Progress Tracker */}
+      {students && students.length > 0 && (
+        <StudentProgress students={students} cohorts={cohorts} />
+      )}
+
     </div>
   )
 }
