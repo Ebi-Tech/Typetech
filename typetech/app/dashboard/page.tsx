@@ -153,7 +153,6 @@ export default function DashboardPage() {
                   ))}
                 </Pie>
                 <Tooltip
-                  formatter={(value: number, name: string) => [value, name]}
                   contentStyle={{ borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 13 }}
                 />
                 <Legend
@@ -178,7 +177,6 @@ export default function DashboardPage() {
                 <Tooltip
                   cursor={{ fill: '#f9fafb' }}
                   contentStyle={{ borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 13 }}
-                  formatter={(value: number) => [value, 'Students']}
                 />
                 <Bar dataKey="value" radius={[6, 6, 0, 0]}>
                   {styleData.map((entry, index) => (
