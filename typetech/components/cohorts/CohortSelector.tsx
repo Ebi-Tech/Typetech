@@ -29,6 +29,14 @@ export function CohortSelector({
       return
     }
 
+    const duplicate = cohorts.some(
+      c => c.name.toLowerCase() === newCohortName.trim().toLowerCase()
+    )
+    if (duplicate) {
+      toast.error('A cohort with that name already exists')
+      return
+    }
+
     try {
       const { error } = await supabase
         .from('cohorts')

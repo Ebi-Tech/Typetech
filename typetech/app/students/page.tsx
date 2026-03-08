@@ -31,9 +31,11 @@ export default function StudentsPage() {
   const [studentSearch, setStudentSearch] = useState('')
 
   const fetchCohorts = async () => {
-    const { data } = await supabase.from('cohorts').select('*').order('name')
-    setCohorts(data || [])
-    // Leave all cohorts collapsed by default
+    const { data } = await supabase.from('cohorts').select('*')
+    const sorted = (data || []).sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+    )
+    setCohorts(sorted)
   }
 
   useEffect(() => {

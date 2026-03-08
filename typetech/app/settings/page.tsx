@@ -19,6 +19,10 @@ export default function SettingsPage() {
   const [showWipeDialog, setShowWipeDialog] = useState(false)
   const [wipeConfirmText, setWipeConfirmText] = useState('')
   const [wiping, setWiping] = useState(false)
+  const [cohorts, setCohorts] = useState<{ id: string; name: string }[]>([])
+  const [cohortToDelete, setCohortToDelete] = useState<string>('placeholder')
+  const [showDeleteCohortDialog, setShowDeleteCohortDialog] = useState(false)
+  const [deletingCohort, setDeletingCohort] = useState(false)
   const [requireMinAttendance, setRequireMinAttendance] = useState(false)
   const [templateUploading, setTemplateUploading] = useState(false)
   const [templateExists, setTemplateExists] = useState(false)
@@ -44,7 +48,35 @@ export default function SettingsPage() {
     }
   }
 
+  const fetchCohorts = async () => {
+    const { data } = await supabase.from('cohorts').select('id, name')
+    const sorted = (data || []).sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+    )
+    setCohorts(sorted)
+  }
+
+  const handleDeleteCohort = async () => {
+    if (!cohortToDelete || cohortToDelete === 'placeholder') return
+    setDeletingCohort(true)
+    try {
+      // Unassign all students in this cohort first
+      await supabase.from('students').update({ cohort_id: null }).eq('cohort_id', cohortToDelete)
+      const { error } = await supabase.from('cohorts').delete().eq('id', cohortToDelete)
+      if (error) throw error
+      toast.success('Cohort deleted. Students have been unassigned.')
+      setCohortToDelete('placeholder')
+      setShowDeleteCohortDialog(false)
+      fetchCohorts()
+    } catch {
+      toast.error('Failed to delete cohort')
+    } finally {
+      setDeletingCohort(false)
+    }
+  }
+
   useEffect(() => {
+    fetchCohorts()
     // Load saved position settings from localStorage
     setNameX(localStorage.getItem('cert_name_x') || '306')
     setNameY(localStorage.getItem('cert_name_y') || '350')
@@ -491,6 +523,31 @@ export default function SettingsPage() {
           </p>
         </div>
         <div className="flex items-center justify-between py-4 border-t border-red-100">
+          <div className="flex-1 mr-6">
+            <p className="font-medium">Delete a cohort</p>
+            <p className="text-sm text-gray-500">
+              Removes the cohort permanently. Students in it will be unassigned but not deleted.
+            </p>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <Select value={cohortToDelete} onValueChange={setCohortToDelete}>
+              <SelectItem value="placeholder">Select cohort…</SelectItem>
+              {cohorts.map(c => (
+                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+              ))}
+            </Select>
+            <Button
+              variant="destructive"
+              disabled={!cohortToDelete || cohortToDelete === 'placeholder'}
+              onClick={() => setShowDeleteCohortDialog(true)}
+            >
+              <Trash2 size={16} className="mr-2" />
+              Delete
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between py-4 border-t border-red-100">
           <div>
             <p className="font-medium">Delete all student data</p>
             <p className="text-sm text-gray-500">
@@ -506,6 +563,28 @@ export default function SettingsPage() {
           </Button>
         </div>
       </div>
+
+      {/* Delete Cohort Confirmation Dialog */}
+      <Dialog open={showDeleteCohortDialog} onOpenChange={(open) => {
+        setShowDeleteCohortDialog(open)
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-red-700">Delete cohort?</DialogTitle>
+            <DialogDescription>
+              This will permanently delete <strong>{cohorts.find(c => c.id === cohortToDelete)?.name}</strong>. Students currently in this cohort will be unassigned but not deleted.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteCohortDialog(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" disabled={deletingCohort} onClick={handleDeleteCohort}>
+              {deletingCohort ? 'Deleting...' : 'Delete Cohort'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Wipe Confirmation Dialog */}
       <Dialog open={showWipeDialog} onOpenChange={(open) => {

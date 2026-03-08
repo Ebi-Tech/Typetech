@@ -46,8 +46,11 @@ export default function DashboardPage() {
   }, [router])
 
   useEffect(() => {
-    supabase.from('cohorts').select('*').order('name').then(({ data }) => {
-      setCohorts(data || [])
+    supabase.from('cohorts').select('*').then(({ data }) => {
+      const sorted = (data || []).sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+      )
+      setCohorts(sorted)
     })
   }, [])
 

@@ -24,8 +24,11 @@ export function StudentImport({ onSuccess, onRefresh }: { onSuccess?: () => void
   const { importStudents, loading } = useStudents()
 
   const refreshCohorts = () => {
-    supabase.from('cohorts').select('id, name').order('name').then(({ data }) => {
-      setCohorts(data || [])
+    supabase.from('cohorts').select('id, name').then(({ data }) => {
+      const sorted = (data || []).sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+      )
+      setCohorts(sorted)
     })
   }
 
@@ -36,6 +39,13 @@ export function StudentImport({ onSuccess, onRefresh }: { onSuccess?: () => void
   const handleCreateCohort = async () => {
     if (!newCohortName.trim()) {
       toast.error('Cohort name is required')
+      return
+    }
+    const duplicate = cohorts.some(
+      c => c.name.toLowerCase() === newCohortName.trim().toLowerCase()
+    )
+    if (duplicate) {
+      toast.error('A cohort with that name already exists')
       return
     }
     const { data, error } = await supabase

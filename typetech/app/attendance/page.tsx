@@ -31,15 +31,18 @@ export default function AttendancePage() {
   
   const { students, loading: studentsLoading } = useStudents()
 
+  const naturalSort = (arr: { id: string; name: string }[]) =>
+    arr.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+
   // Fetch cohorts
   const fetchCohorts = async () => {
-    const { data } = await supabase.from('cohorts').select('*').order('name')
-    setCohorts(data || [])
+    const { data } = await supabase.from('cohorts').select('*')
+    setCohorts(naturalSort(data || []))
   }
 
   useEffect(() => {
-    supabase.from('cohorts').select('*').order('name').then(({ data }) => {
-      setCohorts(data || [])
+    supabase.from('cohorts').select('*').then(({ data }) => {
+      setCohorts(naturalSort(data || []))
     })
   }, [])
 
