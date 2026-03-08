@@ -126,7 +126,9 @@ export default function StudentsPage() {
     return 'secondary'
   }
 
-  if (loading) {
+  // Only block render on the initial load (no students yet).
+  // Subsequent refreshes keep the page mounted so dialogs/state are preserved.
+  if (loading && students.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-gray-500">Loading students...</div>
