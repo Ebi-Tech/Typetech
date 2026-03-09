@@ -67,7 +67,7 @@ export default function SettingsPage() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to delete cohort')
-      toast.success('Cohort deleted. Students have been unassigned.')
+      toast.success('Cohort and all its students have been deleted.')
       setCohortToDelete('placeholder')
       setShowDeleteCohortDialog(false)
       fetchCohorts()
@@ -531,7 +531,7 @@ export default function SettingsPage() {
           <div className="flex-1 mr-6">
             <p className="font-medium">Delete a cohort</p>
             <p className="text-sm text-gray-500">
-              Removes the cohort permanently. Students in it will be unassigned but not deleted.
+              Permanently removes the cohort and all its students, attendance records, and certificates.
             </p>
           </div>
           <div className="flex items-center gap-3 shrink-0">
@@ -577,7 +577,7 @@ export default function SettingsPage() {
           <DialogHeader>
             <DialogTitle className="text-red-700">Delete cohort?</DialogTitle>
             <DialogDescription>
-              This will permanently delete <strong>{cohorts.find(c => c.id === cohortToDelete)?.name}</strong>. Students currently in this cohort will be unassigned but not deleted.
+              This will permanently delete <strong>{cohorts.find(c => c.id === cohortToDelete)?.name}</strong> and <strong>all students, attendance records, and certificates</strong> in it. This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

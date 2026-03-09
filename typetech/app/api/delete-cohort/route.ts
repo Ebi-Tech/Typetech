@@ -14,13 +14,21 @@ export async function POST(request: NextRequest) {
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
 
-    // Unassign all students in this cohort first
-    const { error: unassignError } = await supabaseAdmin
+    // Delete dependent records for all students in this cohort
+    const { data: cohortStudents } = await supabaseAdmin
       .from('students')
-      .update({ cohort_id: null })
+      .select('id')
       .eq('cohort_id', cohortId)
 
-    if (unassignError) throw unassignError
+    const studentIds = (cohortStudents || []).map(s => s.id)
+
+    if (studentIds.length > 0) {
+      await supabaseAdmin.from('attendance').delete().in('student_id', studentIds)
+      await supabaseAdmin.from('week_data').delete().in('student_id', studentIds)
+      await supabaseAdmin.from('certificates').delete().in('student_id', studentIds)
+      await supabaseAdmin.from('email_logs').delete().in('student_id', studentIds)
+      await supabaseAdmin.from('students').delete().in('id', studentIds)
+    }
 
     // Now delete the cohort
     const { error: deleteError } = await supabaseAdmin

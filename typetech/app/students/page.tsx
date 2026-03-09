@@ -6,11 +6,18 @@ import { useStudents } from '@/hooks/useStudents'
 import { Student } from '@/types/database'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { Dialog } from '@/components/ui/Dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/Dialog'
 import { Input } from '@/components/ui/Input'
 import { Select, SelectItem } from '@/components/ui/Select'
 import { Card } from '@/components/ui/Card'
-import { Plus, Download, ChevronDown, ChevronRight, Search, X, UserCheck } from 'lucide-react'
+import { Plus, Download, ChevronDown, ChevronRight, Search, X, ArrowRightLeft } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { CohortSelector } from '@/components/cohorts/CohortSelector'
 import toast from 'react-hot-toast'
@@ -30,9 +37,10 @@ export default function StudentsPage() {
   const [expandedCohorts, setExpandedCohorts] = useState<Record<string, boolean>>({})
   const [selectedCohort, setSelectedCohort] = useState<string | null>(null)
   const [studentSearch, setStudentSearch] = useState('')
-  const [isBulkAssignOpen, setIsBulkAssignOpen] = useState(false)
-  const [bulkAssignCohortId, setBulkAssignCohortId] = useState('')
-  const [bulkAssigning, setBulkAssigning] = useState(false)
+  const [isMoveOpen, setIsMoveOpen] = useState(false)
+  const [moveFromId, setMoveFromId] = useState('')
+  const [moveToId, setMoveToId] = useState('')
+  const [moving, setMoving] = useState(false)
 
   const fetchCohorts = async () => {
     const { data } = await supabase.from('cohorts').select('*')
@@ -45,26 +53,6 @@ export default function StudentsPage() {
   useEffect(() => {
     fetchCohorts()
   }, [])
-
-  const handleBulkAssign = async () => {
-    if (!bulkAssignCohortId) return
-    setBulkAssigning(true)
-    try {
-      const { error } = await supabase
-        .from('students')
-        .update({ cohort_id: bulkAssignCohortId })
-        .is('cohort_id', null)
-      if (error) throw error
-      toast.success('All unassigned students have been moved.')
-      setIsBulkAssignOpen(false)
-      setBulkAssignCohortId('')
-      refresh()
-    } catch {
-      toast.error('Failed to assign students')
-    } finally {
-      setBulkAssigning(false)
-    }
-  }
 
   const studentsByCohort = cohorts.map(cohort => ({
     ...cohort,
@@ -86,6 +74,11 @@ export default function StudentsPage() {
     }))
     .filter(g => g.students.length > 0)
 
+  // Count of students in the selected "from" source for the move dialog
+  const moveFromCount = moveFromId === 'none'
+    ? noCohortStudents.length
+    : (cohorts.find(c => c.id === moveFromId) ? studentsByCohort.find(g => g.id === moveFromId)?.students.length ?? 0 : 0)
+
   const toggleCohort = (cohortId: string) => {
     setExpandedCohorts(prev => ({ ...prev, [cohortId]: !prev[cohortId] }))
   }
@@ -99,7 +92,6 @@ export default function StudentsPage() {
   const handleSaveEdit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!editingStudent) return
-
     const formData = new FormData(e.currentTarget)
     const updates = {
       name: formData.get('name') as string,
@@ -107,7 +99,6 @@ export default function StudentsPage() {
       cohort_id: editCohortId || null,
       notes: formData.get('notes') as string,
     }
-
     try {
       await updateStudent(editingStudent.id, updates)
       setIsEditDialogOpen(false)
@@ -123,6 +114,27 @@ export default function StudentsPage() {
     }
   }
 
+  const handleMove = async () => {
+    if (!moveFromId || !moveToId || moveFromId === moveToId) return
+    setMoving(true)
+    try {
+      const query = supabase.from('students').update({ cohort_id: moveToId })
+      const { error } = moveFromId === 'none'
+        ? await query.is('cohort_id', null)
+        : await query.eq('cohort_id', moveFromId)
+      if (error) throw error
+      toast.success(`${moveFromCount} student${moveFromCount !== 1 ? 's' : ''} moved successfully.`)
+      setIsMoveOpen(false)
+      setMoveFromId('')
+      setMoveToId('')
+      refresh()
+    } catch {
+      toast.error('Failed to move students')
+    } finally {
+      setMoving(false)
+    }
+  }
+
   const handleExport = () => {
     const csv = [
       ['Name', 'Email', 'Cohort', 'Final Status'].join(','),
@@ -133,7 +145,6 @@ export default function StudentsPage() {
         `"${s.final_status || ''}"`
       ].join(',')) || [])
     ].join('\n')
-
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -150,8 +161,6 @@ export default function StudentsPage() {
     return 'secondary'
   }
 
-  // Only block render on the initial load (no students yet).
-  // Subsequent refreshes keep the page mounted so dialogs/state are preserved.
   if (loading && students.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -162,6 +171,7 @@ export default function StudentsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Students</h1>
         <div className="flex gap-2">
@@ -169,29 +179,16 @@ export default function StudentsPage() {
             <Download size={16} className="mr-2" />
             Export CSV
           </Button>
+          <Button variant="outline" onClick={() => { setMoveFromId(''); setMoveToId(''); setIsMoveOpen(true) }}>
+            <ArrowRightLeft size={16} className="mr-2" />
+            Move Students
+          </Button>
           <Button onClick={() => setIsImportDialogOpen(true)}>
             <Plus size={16} className="mr-2" />
             Import Students
           </Button>
         </div>
       </div>
-
-      {/* Import Dialog */}
-      {isImportDialogOpen && (
-        <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
-          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-            <StudentImport
-              onRefresh={() => { refresh(); fetchCohorts() }}
-              onSuccess={() => setIsImportDialogOpen(false)}
-            />
-            <div className="mt-4 flex justify-end">
-              <Button variant="outline" onClick={() => setIsImportDialogOpen(false)}>
-                Close
-              </Button>
-            </div>
-          </div>
-        </Dialog>
-      )}
 
       {/* Cohort Filter + Search */}
       <div className="flex items-center gap-4 flex-wrap">
@@ -230,24 +227,12 @@ export default function StudentsPage() {
         ) : visibleGroups.map((group) => (
           <Card key={group.id} className="overflow-hidden">
             <div
-              className="px-4 py-3 bg-gray-50 border-b flex items-center justify-between cursor-pointer hover:bg-gray-100"
+              className="px-4 py-3 bg-gray-50 border-b flex items-center gap-2 cursor-pointer hover:bg-gray-100"
               onClick={() => toggleCohort(group.id)}
             >
-              <div className="flex items-center gap-2">
-                {(expandedCohorts[group.id] || !!searchQ) ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-                <h2 className="font-semibold">{group.name}</h2>
-                <span className="text-sm text-gray-500">({group.students.length} students)</span>
-              </div>
-              {group.id === 'none' && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={e => { e.stopPropagation(); setBulkAssignCohortId(''); setIsBulkAssignOpen(true) }}
-                >
-                  <UserCheck size={14} className="mr-1" />
-                  Move all to cohort
-                </Button>
-              )}
+              {(expandedCohorts[group.id] || !!searchQ) ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+              <h2 className="font-semibold">{group.name}</h2>
+              <span className="text-sm text-gray-500">({group.students.length} students)</span>
             </div>
 
             {(expandedCohorts[group.id] || !!searchQ) && (
@@ -263,7 +248,7 @@ export default function StudentsPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-200">
                     {group.students.map((student: Student) => (
-                      <tr key={student.id}>
+                      <tr key={student.id} className="hover:bg-gray-50">
                         <td className="px-4 py-2 font-medium">{student.name}</td>
                         <td className="px-4 py-2 text-sm text-gray-600">{student.email}</td>
                         <td className="px-4 py-2">
@@ -271,9 +256,9 @@ export default function StudentsPage() {
                             {student.final_status || 'Pending'}
                           </Badge>
                         </td>
-                        <td className="px-4 py-2">
-                          <Button size="sm" variant="ghost" onClick={() => handleEdit(student)}>Edit</Button>
-                          <Button size="sm" variant="ghost" onClick={() => handleDelete(student.id)}>Delete</Button>
+                        <td className="px-4 py-2 flex gap-1">
+                          <Button size="sm" variant="outline" onClick={() => handleEdit(student)}>Edit</Button>
+                          <Button size="sm" variant="ghost" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => handleDelete(student.id)}>Delete</Button>
                         </td>
                       </tr>
                     ))}
@@ -285,81 +270,113 @@ export default function StudentsPage() {
         ))}
       </div>
 
-      {/* Edit Student Dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <div className="bg-white rounded-lg p-6 max-w-md w-full">
-          <h2 className="text-lg font-semibold mb-4">Edit Student</h2>
+      {/* ── Import Dialog ── */}
+      <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Import Students</DialogTitle>
+          </DialogHeader>
+          <StudentImport
+            onRefresh={() => { refresh(); fetchCohorts() }}
+            onSuccess={() => setIsImportDialogOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
 
+      {/* ── Edit Student Dialog ── */}
+      <Dialog open={isEditDialogOpen} onOpenChange={open => { setIsEditDialogOpen(open); if (!open) setEditingStudent(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Student</DialogTitle>
+            {editingStudent && (
+              <DialogDescription>{editingStudent.name}</DialogDescription>
+            )}
+          </DialogHeader>
           {editingStudent && (
-            <form onSubmit={handleSaveEdit} className="space-y-4">
-              <Input
-                name="name"
-                label="Name"
-                defaultValue={editingStudent.name}
-                required
-              />
-
-              <Input
-                name="email"
-                label="Email"
-                type="email"
-                defaultValue={editingStudent.email}
-                required
-              />
-
+            <form onSubmit={handleSaveEdit} className="space-y-4 pt-2">
+              <Input name="name" label="Name" defaultValue={editingStudent.name} required />
+              <Input name="email" label="Email" type="email" defaultValue={editingStudent.email} required />
               <Select
                 label="Cohort"
                 value={editCohortId || 'none'}
                 onValueChange={val => setEditCohortId(val === 'none' ? '' : val)}
               >
                 <SelectItem value="none">No Cohort</SelectItem>
-                {cohorts.map((cohort) => (
+                {cohorts.map(cohort => (
                   <SelectItem key={cohort.id} value={cohort.id}>{cohort.name}</SelectItem>
                 ))}
               </Select>
-
               <Input
                 name="notes"
                 label="Notes"
                 defaultValue={editingStudent.notes || ''}
                 placeholder="Additional notes..."
               />
-
-              <div className="flex justify-end gap-2 mt-6">
-                <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
-                  Cancel
-                </Button>
+              <DialogFooter className="pt-2">
+                <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
                 <Button type="submit">Save Changes</Button>
-              </div>
+              </DialogFooter>
             </form>
           )}
-        </div>
+        </DialogContent>
       </Dialog>
 
-      {/* Bulk Assign Dialog */}
-      <Dialog open={isBulkAssignOpen} onOpenChange={setIsBulkAssignOpen}>
-        <div className="bg-white rounded-lg p-6 max-w-sm w-full">
-          <h2 className="text-lg font-semibold mb-1">Move unassigned students</h2>
-          <p className="text-sm text-gray-500 mb-4">
-            All {noCohortStudents.length} students in &quot;No Cohort&quot; will be moved to the selected cohort.
-          </p>
-          <Select
-            label="Target Cohort"
-            value={bulkAssignCohortId || 'placeholder'}
-            onValueChange={val => setBulkAssignCohortId(val === 'placeholder' ? '' : val)}
-          >
-            <SelectItem value="placeholder">Select cohort…</SelectItem>
-            {cohorts.map(c => (
-              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-            ))}
-          </Select>
-          <div className="flex justify-end gap-2 mt-6">
-            <Button variant="outline" onClick={() => setIsBulkAssignOpen(false)}>Cancel</Button>
-            <Button disabled={!bulkAssignCohortId || bulkAssigning} onClick={handleBulkAssign}>
-              {bulkAssigning ? 'Moving...' : 'Move Students'}
-            </Button>
+      {/* ── Move Students Dialog ── */}
+      <Dialog open={isMoveOpen} onOpenChange={open => { setIsMoveOpen(open); if (!open) { setMoveFromId(''); setMoveToId('') } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Move Students Between Cohorts</DialogTitle>
+            <DialogDescription>
+              Select a source and destination cohort. All students from the source will be moved.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <Select
+              label="Move from"
+              value={moveFromId || 'placeholder'}
+              onValueChange={val => { setMoveFromId(val === 'placeholder' ? '' : val); setMoveToId('') }}
+            >
+              <SelectItem value="placeholder">Select source cohort…</SelectItem>
+              {noCohortStudents.length > 0 && (
+                <SelectItem value="none">No Cohort ({noCohortStudents.length} students)</SelectItem>
+              )}
+              {cohorts.map(c => {
+                const count = studentsByCohort.find(g => g.id === c.id)?.students.length ?? 0
+                return (
+                  <SelectItem key={c.id} value={c.id}>{c.name} ({count} students)</SelectItem>
+                )
+              })}
+            </Select>
+
+            <Select
+              label="Move to"
+              value={moveToId || 'placeholder'}
+              onValueChange={val => setMoveToId(val === 'placeholder' ? '' : val)}
+            >
+              <SelectItem value="placeholder">Select destination cohort…</SelectItem>
+              {cohorts.filter(c => c.id !== moveFromId).map(c => (
+                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+              ))}
+            </Select>
+
+            {moveFromId && moveToId && (
+              <p className="text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-3 py-2">
+                <strong>{moveFromCount}</strong> student{moveFromCount !== 1 ? 's' : ''} will be moved from{' '}
+                <strong>{moveFromId === 'none' ? 'No Cohort' : cohorts.find(c => c.id === moveFromId)?.name}</strong>{' '}
+                to <strong>{cohorts.find(c => c.id === moveToId)?.name}</strong>.
+              </p>
+            )}
           </div>
-        </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsMoveOpen(false)}>Cancel</Button>
+            <Button
+              disabled={!moveFromId || !moveToId || moveFromId === moveToId || moving}
+              onClick={handleMove}
+            >
+              {moving ? 'Moving...' : `Move ${moveFromCount > 0 ? moveFromCount + ' ' : ''}Students`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
     </div>
   )
