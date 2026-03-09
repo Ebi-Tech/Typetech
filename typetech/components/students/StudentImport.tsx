@@ -247,9 +247,9 @@ export function StudentImport({ onSuccess, onRefresh }: { onSuccess?: () => void
           <div className="border border-yellow-300 rounded-lg overflow-hidden bg-yellow-50">
             <div className="px-4 py-3 border-b border-yellow-300">
               <p className="text-sm font-semibold text-yellow-800">
-                {skippedStudents.length} student{skippedStudents.length > 1 ? 's' : ''} skipped — email already exists in the system
+                {skippedStudents.length} student{skippedStudents.length > 1 ? 's' : ''} skipped — already assigned to a different cohort
               </p>
-              <p className="text-xs text-yellow-700 mt-0.5">These were not imported. If they belong to a different cohort, edit them manually in the Students page.</p>
+              <p className="text-xs text-yellow-700 mt-0.5">These were not moved. To reassign them, edit each student individually in the Students page.</p>
             </div>
             <table className="min-w-full divide-y divide-yellow-200">
               <thead className="bg-yellow-100">
