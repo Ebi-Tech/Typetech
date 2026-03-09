@@ -60,16 +60,21 @@ export default function SettingsPage() {
     if (!cohortToDelete || cohortToDelete === 'placeholder') return
     setDeletingCohort(true)
     try {
-      // Unassign all students in this cohort first
-      await supabase.from('students').update({ cohort_id: null }).eq('cohort_id', cohortToDelete)
-      const { error } = await supabase.from('cohorts').delete().eq('id', cohortToDelete)
-      if (error) throw error
+      const res = await fetch('/api/delete-cohort', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cohortId: cohortToDelete }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to delete cohort')
       toast.success('Cohort deleted. Students have been unassigned.')
       setCohortToDelete('placeholder')
       setShowDeleteCohortDialog(false)
       fetchCohorts()
-    } catch {
-      toast.error('Failed to delete cohort')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete cohort'
+      toast.error(message)
+      console.error('Delete cohort error:', err)
     } finally {
       setDeletingCohort(false)
     }
