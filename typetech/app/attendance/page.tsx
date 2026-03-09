@@ -6,7 +6,8 @@ import { CohortSelector } from '@/components/cohorts/CohortSelector'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Select, SelectItem } from '@/components/ui/Select'
-import { ChevronLeft, ChevronRight, Save, Cloud, CheckCircle2, Download, Search, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Save, Cloud, CheckCircle2, Download, Search, X, Trash2 } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/Dialog'
 import { AttendanceStatus } from '@/types/database'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
@@ -23,6 +24,8 @@ export default function AttendancePage() {
   const [typingStyleData, setTypingStyleData] = useState<Record<string, string>>({})
   const [gradeData, setGradeData] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
+  const [showClearDialog, setShowClearDialog] = useState(false)
+  const [clearing, setClearing] = useState(false)
   const [selectedCohort, setSelectedCohort] = useState<string | null>(null)
   const [cohorts, setCohorts] = useState<Cohort[]>([])
   const [syncing, setSyncing] = useState(false)
@@ -167,97 +170,85 @@ export default function AttendancePage() {
     }
   }
 
+  const autoSaveToast = (label: string) => toast.success(`✓ ${label} saved`, {
+    duration: 2000,
+    position: 'top-center',
+    style: { background: '#10b981', color: 'white', fontSize: '14px', padding: '8px 16px' },
+  })
+
   const handleStatusChange = async (studentId: string, value: string) => {
-    if (value === 'blank-status') return
-    
-    const status = value as AttendanceStatus
-    setAttendanceData(prev => ({
-      ...prev,
-      [studentId]: status
-    }))
-    
     setSyncing(true)
-
-    const success = await saveAttendance(studentId, currentWeek, status)
-
-    setSyncing(false)
-    if (success) {
-      setLastSync(new Date())
-      toast.success('✓ Attendance saved', {
-        duration: 2000,
-        position: 'top-center',
-        icon: '🔄',
-        style: {
-          background: '#10b981',
-          color: 'white',
-          fontSize: '14px',
-          padding: '8px 16px',
-        },
-      })
+    if (value === 'blank-status') {
+      setAttendanceData(prev => { const next = { ...prev }; delete next[studentId]; return next })
+      await supabase.from('attendance').delete().eq('student_id', studentId).eq('week_number', currentWeek)
+    } else {
+      const status = value as AttendanceStatus
+      setAttendanceData(prev => ({ ...prev, [studentId]: status }))
+      await saveAttendance(studentId, currentWeek, status)
     }
+    setSyncing(false)
+    setLastSync(new Date())
+    autoSaveToast('Attendance')
   }
 
   const handleTypingStyleChange = async (studentId: string, value: string) => {
-    if (value === 'blank-style') return
-
-    setTypingStyleData(prev => ({
-      ...prev,
-      [studentId]: value
-    }))
-
     setSyncing(true)
-
-    const [success] = await Promise.all([
-      saveWeekData(studentId, currentWeek, { typing_style: value }),
-      supabase.from('students').update({ typing_style: value }).eq('id', studentId)
-    ])
-
-    setSyncing(false)
-    if (success) {
-      setLastSync(new Date())
-      toast.success('✓ Typing style saved', {
-        duration: 2000,
-        position: 'top-center',
-        icon: '🔄',
-        style: {
-          background: '#10b981',
-          color: 'white',
-          fontSize: '14px',
-          padding: '8px 16px',
-        },
-      })
+    if (value === 'blank-style') {
+      setTypingStyleData(prev => { const next = { ...prev }; delete next[studentId]; return next })
+      await Promise.all([
+        supabase.from('week_data').update({ typing_style: null }).eq('student_id', studentId).eq('week_number', currentWeek),
+        supabase.from('students').update({ typing_style: null }).eq('id', studentId),
+      ])
+    } else {
+      setTypingStyleData(prev => ({ ...prev, [studentId]: value }))
+      await Promise.all([
+        saveWeekData(studentId, currentWeek, { typing_style: value }),
+        supabase.from('students').update({ typing_style: value }).eq('id', studentId),
+      ])
     }
+    setSyncing(false)
+    setLastSync(new Date())
+    autoSaveToast('Typing style')
   }
 
   const handleGradeChange = async (studentId: string, value: string) => {
-    if (value === 'blank-grade') return
-
-    setGradeData(prev => ({
-      ...prev,
-      [studentId]: value
-    }))
-
     setSyncing(true)
-
-    const [success] = await Promise.all([
-      saveWeekData(studentId, currentWeek, { grade: value }),
-      supabase.from('students').update({ final_status: value }).eq('id', studentId)
-    ])
-
+    if (value === 'blank-grade') {
+      setGradeData(prev => { const next = { ...prev }; delete next[studentId]; return next })
+      await Promise.all([
+        supabase.from('week_data').update({ grade: null }).eq('student_id', studentId).eq('week_number', currentWeek),
+        supabase.from('students').update({ final_status: null }).eq('id', studentId),
+      ])
+    } else {
+      setGradeData(prev => ({ ...prev, [studentId]: value }))
+      await Promise.all([
+        saveWeekData(studentId, currentWeek, { grade: value }),
+        supabase.from('students').update({ final_status: value }).eq('id', studentId),
+      ])
+    }
     setSyncing(false)
-    if (success) {
-      setLastSync(new Date())
-      toast.success('✓ Grade saved', {
-        duration: 2000,
-        position: 'top-center',
-        icon: '🔄',
-        style: {
-          background: '#10b981',
-          color: 'white',
-          fontSize: '14px',
-          padding: '8px 16px',
-        },
-      })
+    setLastSync(new Date())
+    autoSaveToast('Grade')
+  }
+
+  const handleClearWeek = async () => {
+    if (!filteredStudents || filteredStudents.length === 0) return
+    setClearing(true)
+    try {
+      const studentIds = filteredStudents.map(s => s.id)
+      await Promise.all([
+        supabase.from('attendance').delete().eq('week_number', currentWeek).in('student_id', studentIds),
+        supabase.from('week_data').delete().eq('week_number', currentWeek).in('student_id', studentIds),
+      ])
+      setAttendanceData({})
+      setTypingStyleData({})
+      setGradeData({})
+      setShowClearDialog(false)
+      toast.success(`Week ${currentWeek} data cleared.`)
+    } catch {
+      toast.error('Failed to clear week data')
+    } finally {
+      setClearing(false)
     }
   }
 
@@ -418,39 +409,43 @@ export default function AttendancePage() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold">Attendance Tracking</h1>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Week navigation */}
+          <div className="flex items-center gap-1">
+            <Button variant="outline" size="sm" onClick={() => setCurrentWeek(currentWeek - 1)} disabled={currentWeek === 1}>
+              <ChevronLeft size={16} />
+            </Button>
+            <select
+              value={currentWeek}
+              onChange={(e) => setCurrentWeek(Number(e.target.value))}
+              className="h-9 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+            >
+              {Array.from({ length: 11 }, (_, i) => (
+                <option key={i + 1} value={i + 1}>Week {i + 1}</option>
+              ))}
+            </select>
+            <Button variant="outline" size="sm" onClick={() => setCurrentWeek(currentWeek + 1)} disabled={currentWeek === 11}>
+              <ChevronRight size={16} />
+            </Button>
+          </div>
+          <Button variant="outline" size="sm" onClick={handleExport}>
+            <Download size={16} className="mr-1.5" />
+            Export
+          </Button>
           <Button
             variant="outline"
-            onClick={() => setCurrentWeek(currentWeek - 1)}
-            disabled={currentWeek === 1}
+            size="sm"
+            className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+            onClick={() => setShowClearDialog(true)}
           >
-            <ChevronLeft size={16} />
+            <Trash2 size={16} className="mr-1.5" />
+            Clear Week
           </Button>
-          <select
-            value={currentWeek}
-            onChange={(e) => setCurrentWeek(Number(e.target.value))}
-            className="h-10 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-          >
-            {Array.from({ length: 11 }, (_, i) => (
-              <option key={i + 1} value={i + 1}>Week {i + 1}</option>
-            ))}
-          </select>
-          <Button
-            variant="outline"
-            onClick={() => setCurrentWeek(currentWeek + 1)}
-            disabled={currentWeek === 11}
-          >
-            <ChevronRight size={16} />
-          </Button>
-          <Button variant="outline" onClick={handleExport}>
-            <Download size={16} className="mr-2" />
-            Export CSV
-          </Button>
-          <Button onClick={handleManualSave} disabled={saving}>
-            <Save size={16} className="mr-2" />
-            {saving ? 'Saving...' : 'Save Week'}
+          <Button size="sm" onClick={handleManualSave} disabled={saving}>
+            <Save size={16} className="mr-1.5" />
+            {saving ? 'Saving…' : 'Save Week'}
           </Button>
         </div>
       </div>
@@ -483,8 +478,15 @@ export default function AttendancePage() {
         </div>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      {/* Summary — compact bar on mobile, full cards on desktop */}
+      <div className="md:hidden flex items-center gap-3 flex-wrap bg-white border rounded-lg px-4 py-2.5 text-sm">
+        <span className="text-gray-500 font-medium">Week {currentWeek}</span>
+        <span className="text-gray-700">{summary.total} students</span>
+        <span className="text-green-600 font-medium">✓ {summary.present} present</span>
+        <span className="text-yellow-600 font-medium">⏱ {summary.late} late</span>
+        <span className="text-red-600 font-medium">✗ {summary.absent} absent</span>
+      </div>
+      <div className="hidden md:grid grid-cols-4 gap-4">
         <Card className="p-4">
           <div className="flex items-center justify-between">
             <div>
@@ -492,11 +494,10 @@ export default function AttendancePage() {
               <p className="text-2xl font-bold">{summary.total}</p>
             </div>
             <div className="bg-blue-100 p-3 rounded-full">
-              <span className="text-blue-600 font-semibold">Total</span>
+              <span className="text-blue-600 font-semibold text-sm">Total</span>
             </div>
           </div>
         </Card>
-        
         <Card className="p-4">
           <div className="flex items-center justify-between">
             <div>
@@ -508,7 +509,6 @@ export default function AttendancePage() {
             </div>
           </div>
         </Card>
-        
         <Card className="p-4">
           <div className="flex items-center justify-between">
             <div>
@@ -520,7 +520,6 @@ export default function AttendancePage() {
             </div>
           </div>
         </Card>
-        
         <Card className="p-4">
           <div className="flex items-center justify-between">
             <div>
@@ -548,57 +547,49 @@ export default function AttendancePage() {
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Student
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Email
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Typing Style
-                  <span className="block text-xs font-normal text-gray-400">(Week {currentWeek})</span>
+                <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Style
+                  <span className="hidden md:block text-xs font-normal text-gray-400 normal-case">Typing (Wk {currentWeek})</span>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Grade
-                  <span className="block text-xs font-normal text-gray-400">(Week {currentWeek})</span>
+                  <span className="hidden md:block text-xs font-normal text-gray-400 normal-case">(Wk {currentWeek})</span>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Attendance
-                  <span className="block text-xs font-normal text-gray-400">(Week {currentWeek})</span>
+                  <span className="hidden md:block text-xs font-normal text-gray-400 normal-case">(Wk {currentWeek})</span>
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {displayedStudents?.map((student) => (
                 <tr key={student.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap font-medium">
+                  <td className="px-3 md:px-6 py-3 md:py-4 whitespace-nowrap font-medium text-sm md:text-base">
                     {student.name}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                  <td className="hidden md:table-cell px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                     {student.email}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-3 md:px-6 py-3 md:py-4 whitespace-nowrap">
                     <Select
                       value={typingStyleData[student.id] || 'blank-style'}
-                      onValueChange={(value) => {
-                        if (value !== 'blank-style') {
-                          handleTypingStyleChange(student.id, value)
-                        }
-                      }}
+                      onValueChange={(value) => handleTypingStyleChange(student.id, value)}
                     >
                       <SelectItem value="blank-style">—</SelectItem>
                       <SelectItem value="Hunting">Hunting</SelectItem>
                       <SelectItem value="Homerow">Homerow</SelectItem>
                     </Select>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-3 md:px-6 py-3 md:py-4 whitespace-nowrap">
                     <Select
                       value={gradeData[student.id] || 'blank-grade'}
-                      onValueChange={(value) => {
-                        if (value !== 'blank-grade') {
-                          handleGradeChange(student.id, value)
-                        }
-                      }}
+                      onValueChange={(value) => handleGradeChange(student.id, value)}
                     >
                       <SelectItem value="blank-grade">—</SelectItem>
                       <SelectItem value="Pass">Pass</SelectItem>
@@ -606,14 +597,10 @@ export default function AttendancePage() {
                       <SelectItem value="Complete">Complete</SelectItem>
                     </Select>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-3 md:px-6 py-3 md:py-4 whitespace-nowrap">
                     <Select
                       value={attendanceData[student.id] || 'blank-status'}
-                      onValueChange={(value) => {
-                        if (value !== 'blank-status') {
-                          handleStatusChange(student.id, value)
-                        }
-                      }}
+                      onValueChange={(value) => handleStatusChange(student.id, value)}
                     >
                       <SelectItem value="blank-status">—</SelectItem>
                       <SelectItem value="Present">Present</SelectItem>
@@ -627,6 +614,27 @@ export default function AttendancePage() {
           </table>
         </div>
       </Card>
+
+      {/* Clear Week Confirmation Dialog */}
+      <Dialog open={showClearDialog} onOpenChange={setShowClearDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-red-700">Clear Week {currentWeek} data?</DialogTitle>
+            <DialogDescription>
+              This will permanently delete all attendance, typing style, and grade entries for{' '}
+              <strong>Week {currentWeek}</strong>
+              {selectedCohort ? ` (${cohorts.find(c => c.id === selectedCohort)?.name})` : ' (all cohorts)'}.
+              Other weeks are not affected.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowClearDialog(false)}>Cancel</Button>
+            <Button variant="destructive" disabled={clearing} onClick={handleClearWeek}>
+              {clearing ? 'Clearing…' : 'Clear Week'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
