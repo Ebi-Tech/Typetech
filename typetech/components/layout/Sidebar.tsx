@@ -10,6 +10,7 @@ import {
   Settings,
   LogOut,
   Mail,
+  MessageSquare,
   User,
   X,
 } from 'lucide-react'
@@ -23,6 +24,7 @@ const navigation = [
   { name: 'Students', href: '/students', icon: Users },
   { name: 'Attendance', href: '/attendance', icon: CalendarCheck },
   { name: 'Certificates', href: '/certificates', icon: Award },
+  { name: 'Messages', href: '/messages', icon: MessageSquare },
   { name: 'Invites', href: '/invites', icon: Mail },
   { name: 'Settings', href: '/settings', icon: Settings },
 ]
