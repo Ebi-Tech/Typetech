@@ -10,9 +10,10 @@ import { Dialog } from '@/components/ui/Dialog'
 import { Input } from '@/components/ui/Input'
 import { Select, SelectItem } from '@/components/ui/Select'
 import { Card } from '@/components/ui/Card'
-import { Plus, Download, ChevronDown, ChevronRight, Search, X } from 'lucide-react'
+import { Plus, Download, ChevronDown, ChevronRight, Search, X, UserCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { CohortSelector } from '@/components/cohorts/CohortSelector'
+import toast from 'react-hot-toast'
 
 interface Cohort {
   id: string
@@ -29,6 +30,9 @@ export default function StudentsPage() {
   const [expandedCohorts, setExpandedCohorts] = useState<Record<string, boolean>>({})
   const [selectedCohort, setSelectedCohort] = useState<string | null>(null)
   const [studentSearch, setStudentSearch] = useState('')
+  const [isBulkAssignOpen, setIsBulkAssignOpen] = useState(false)
+  const [bulkAssignCohortId, setBulkAssignCohortId] = useState('')
+  const [bulkAssigning, setBulkAssigning] = useState(false)
 
   const fetchCohorts = async () => {
     const { data } = await supabase.from('cohorts').select('*')
@@ -41,6 +45,26 @@ export default function StudentsPage() {
   useEffect(() => {
     fetchCohorts()
   }, [])
+
+  const handleBulkAssign = async () => {
+    if (!bulkAssignCohortId) return
+    setBulkAssigning(true)
+    try {
+      const { error } = await supabase
+        .from('students')
+        .update({ cohort_id: bulkAssignCohortId })
+        .is('cohort_id', null)
+      if (error) throw error
+      toast.success('All unassigned students have been moved.')
+      setIsBulkAssignOpen(false)
+      setBulkAssignCohortId('')
+      refresh()
+    } catch {
+      toast.error('Failed to assign students')
+    } finally {
+      setBulkAssigning(false)
+    }
+  }
 
   const studentsByCohort = cohorts.map(cohort => ({
     ...cohort,
@@ -214,6 +238,16 @@ export default function StudentsPage() {
                 <h2 className="font-semibold">{group.name}</h2>
                 <span className="text-sm text-gray-500">({group.students.length} students)</span>
               </div>
+              {group.id === 'none' && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={e => { e.stopPropagation(); setBulkAssignCohortId(''); setIsBulkAssignOpen(true) }}
+                >
+                  <UserCheck size={14} className="mr-1" />
+                  Move all to cohort
+                </Button>
+              )}
             </div>
 
             {(expandedCohorts[group.id] || !!searchQ) && (
@@ -299,6 +333,32 @@ export default function StudentsPage() {
               </div>
             </form>
           )}
+        </div>
+      </Dialog>
+
+      {/* Bulk Assign Dialog */}
+      <Dialog open={isBulkAssignOpen} onOpenChange={setIsBulkAssignOpen}>
+        <div className="bg-white rounded-lg p-6 max-w-sm w-full">
+          <h2 className="text-lg font-semibold mb-1">Move unassigned students</h2>
+          <p className="text-sm text-gray-500 mb-4">
+            All {noCohortStudents.length} students in &quot;No Cohort&quot; will be moved to the selected cohort.
+          </p>
+          <Select
+            label="Target Cohort"
+            value={bulkAssignCohortId || 'placeholder'}
+            onValueChange={val => setBulkAssignCohortId(val === 'placeholder' ? '' : val)}
+          >
+            <SelectItem value="placeholder">Select cohort…</SelectItem>
+            {cohorts.map(c => (
+              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+            ))}
+          </Select>
+          <div className="flex justify-end gap-2 mt-6">
+            <Button variant="outline" onClick={() => setIsBulkAssignOpen(false)}>Cancel</Button>
+            <Button disabled={!bulkAssignCohortId || bulkAssigning} onClick={handleBulkAssign}>
+              {bulkAssigning ? 'Moving...' : 'Move Students'}
+            </Button>
+          </div>
         </div>
       </Dialog>
     </div>
