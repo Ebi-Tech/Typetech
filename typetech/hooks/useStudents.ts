@@ -79,7 +79,12 @@ export function useStudents() {
     }
   }
 
-  const importStudents = async (names: string[], emails: string[], cohortId?: string) => {
+  const importStudents = async (
+    names: string[],
+    emails: string[],
+    cohortId?: string,
+    conflictAction: 'add' | 'move' | 'skip' = 'skip',
+  ) => {
     try {
       const allStudents = names.map((name, index) => ({ name, email: emails[index] }))
 
@@ -96,13 +101,14 @@ export function useStudents() {
         const ex = existingMap.get(s.email)
         return ex && !ex.cohort_id   // exists but currently unassigned
       })
-      const skipped     = allStudents.filter(s => {
+      const conflicting = allStudents.filter(s => {
         const ex = existingMap.get(s.email)
         return ex && ex.cohort_id && ex.cohort_id !== cohortId  // already in a different cohort
       })
 
       let inserted: Student[] = []
 
+      // Always insert truly new students
       if (toInsert.length > 0) {
         const { data, error } = await supabase
           .from('students')
@@ -112,20 +118,47 @@ export function useStudents() {
         inserted = data || []
       }
 
+      // Always reassign students who exist but have no cohort
       if (toReassign.length > 0 && cohortId) {
         const ids = toReassign.map(s => existingMap.get(s.email)!.id)
         await supabase.from('students').update({ cohort_id: cohortId }).in('id', ids)
       }
 
+      // Handle conflicting students based on chosen action
+      let addedFromConflict: Student[] = []
+      if (conflicting.length > 0) {
+        if (conflictAction === 'add') {
+          // Insert brand-new records alongside the existing ones
+          const { data, error } = await supabase
+            .from('students')
+            .insert(conflicting.map(s => ({ ...s, final_status: 'Pending', cohort_id: cohortId || null })))
+            .select()
+          if (error) throw error
+          addedFromConflict = data || []
+        } else if (conflictAction === 'move') {
+          // Move existing records to the target cohort
+          const ids = conflicting.map(s => existingMap.get(s.email)!.id)
+          await supabase.from('students').update({ cohort_id: cohortId }).in('id', ids)
+        }
+        // 'skip' → do nothing
+      }
+
       await fetchStudents()
 
+      const totalImported = inserted.length + addedFromConflict.length
       const parts: string[] = []
-      if (inserted.length)    parts.push(`${inserted.length} imported`)
+      if (totalImported)      parts.push(`${totalImported} imported`)
       if (toReassign.length)  parts.push(`${toReassign.length} reassigned to this cohort`)
-      if (skipped.length)     parts.push(`${skipped.length} skipped (already in another cohort)`)
+      if (conflicting.length && conflictAction === 'move') parts.push(`${conflicting.length} moved to this cohort`)
+      if (conflicting.length && conflictAction === 'skip') parts.push(`${conflicting.length} skipped`)
       toast.success(parts.join(', ') || 'Done', { duration: 5000 })
 
-      return { inserted, reassigned: toReassign, skipped }
+      return {
+        inserted,
+        reassigned: toReassign,
+        addedFromConflict,
+        skipped: conflictAction === 'skip' ? conflicting : [],
+      }
     } catch (err) {
       toast.error('Failed to import students')
       throw err
