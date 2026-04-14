@@ -216,18 +216,35 @@ export default function MessagesPage() {
   }
 
   const selectedIsSaved = savedTemplates.some(t => t.id === selectedTemplateId)
+  const selectedIsEditable = selectedTemplateId !== 'custom'
 
   const handleUpdateTemplate = async () => {
-    if (!selectedIsSaved || !subject || !body) return
-    const { error } = await supabase
-      .from('message_templates')
-      .update({ subject, body })
-      .eq('id', selectedTemplateId)
-    if (error) { toast.error('Failed to update template'); return }
-    setSavedTemplates(prev => prev.map(t =>
-      t.id === selectedTemplateId ? { ...t, subject, body } : t
-    ))
-    toast.success('Template updated')
+    if (!selectedIsEditable || !subject || !body) return
+
+    if (selectedIsSaved) {
+      // Update existing Supabase record
+      const { error } = await supabase
+        .from('message_templates')
+        .update({ subject, body })
+        .eq('id', selectedTemplateId)
+      if (error) { toast.error('Failed to update template'); return }
+      setSavedTemplates(prev => prev.map(t =>
+        t.id === selectedTemplateId ? { ...t, subject, body } : t
+      ))
+      toast.success('Template updated')
+    } else {
+      // Built-in template — save to Supabase using the built-in's name (one click, no dialog)
+      const builtinName = BUILTIN_TEMPLATES.find(t => t.id === selectedTemplateId)?.name || 'Custom Template'
+      const { data, error } = await supabase
+        .from('message_templates')
+        .insert({ name: builtinName, subject, body })
+        .select()
+        .single()
+      if (error || !data) { toast.error('Failed to save template'); return }
+      setSavedTemplates(prev => [...prev, data])
+      setTemplateId(data.id)
+      toast.success(`"${data.name}" saved to your templates`)
+    }
   }
 
   const handleSaveTemplate = async () => {
@@ -353,10 +370,10 @@ export default function MessagesPage() {
               </p>
             </div>
             <div className="flex gap-2">
-              {selectedIsSaved && (
+              {selectedIsEditable && (
                 <Button variant="outline" size="sm" onClick={handleUpdateTemplate} disabled={!subject || !body}>
                   <Save size={14} className="mr-1.5" />
-                  Update Template
+                  {selectedIsSaved ? 'Update Template' : 'Save Template'}
                 </Button>
               )}
               <Button variant="outline" size="sm" onClick={() => setShowSaveTemplate(true)} disabled={!subject || !body}>
