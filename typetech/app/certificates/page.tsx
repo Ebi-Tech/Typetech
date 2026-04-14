@@ -9,6 +9,7 @@ import { Select, SelectItem } from '@/components/ui/Select'
 import { Badge } from '@/components/ui/Badge'
 import { Download, Mail, CheckCircle, Eye, Trash2 } from 'lucide-react'
 import { PDFDocument, rgb } from 'pdf-lib'
+import fontkit from '@pdf-lib/fontkit'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
 
@@ -114,6 +115,7 @@ export default function CertificatesPage() {
 
       // Load the template
       const pdfDoc = await PDFDocument.load(templateBytes)
+      pdfDoc.registerFontkit(fontkit)
       const pages = pdfDoc.getPages()
       const firstPage = pages[0]
       const { width, height } = firstPage.getSize()
