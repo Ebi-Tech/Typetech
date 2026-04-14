@@ -7,8 +7,8 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Select, SelectItem } from '@/components/ui/Select'
 import { Badge } from '@/components/ui/Badge'
-import { Download, Mail, CheckCircle, Eye } from 'lucide-react'
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
+import { Download, Mail, CheckCircle, Eye, Trash2 } from 'lucide-react'
+import { PDFDocument, rgb } from 'pdf-lib'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
 
@@ -101,12 +101,12 @@ export default function CertificatesPage() {
 
   const generateCertificate = async (studentId: string, studentName: string) => {
     try {
-      // Fetch the template from Supabase Storage
+      // Fetch the template — cache-bust so a newly uploaded template is always fresh
       const { data: templateUrlData } = supabase.storage
         .from('certificates')
         .getPublicUrl('certificate-template/template.pdf')
 
-      const templateResponse = await fetch(templateUrlData.publicUrl)
+      const templateResponse = await fetch(`${templateUrlData.publicUrl}?v=${Date.now()}`)
       if (!templateResponse.ok) {
         throw new Error('No template found. Please upload one in Settings > Certificates.')
       }
@@ -118,35 +118,24 @@ export default function CertificatesPage() {
       const firstPage = pages[0]
       const { width, height } = firstPage.getSize()
 
-      // Try AcroForm field first (for PDFs that have one named 'studentName')
-      let nameWritten = false
-      try {
-        const form = pdfDoc.getForm()
-        const field = form.getTextField('studentName')
-        field.setText(studentName)
-        form.flatten()
-        nameWritten = true
-      } catch {
-        // No form field — fall back to coordinate overlay
-      }
+      // Embed Alex Brush (hosted in /public/fonts/)
+      const fontResponse = await fetch('/fonts/AlexBrush-Regular.ttf')
+      if (!fontResponse.ok) throw new Error('Alex Brush font not found')
+      const fontBytes = await fontResponse.arrayBuffer()
+      const alexBrush = await pdfDoc.embedFont(fontBytes)
 
-      if (!nameWritten) {
-        // Read position from localStorage (configured in Settings > Certificates)
-        const centerX = Number(localStorage.getItem('cert_name_x') || width / 2)
-        const nameY = Number(localStorage.getItem('cert_name_y') || height * 0.45)
-        const fontSize = Number(localStorage.getItem('cert_name_size') || 36)
+      const fontSize = 48
+      // Always center horizontally; Y is configurable from Settings > Certificates
+      const nameY = Number(localStorage.getItem('cert_name_y') || height * 0.45)
+      const textWidth = alexBrush.widthOfTextAtSize(studentName, fontSize)
 
-        const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
-        const textWidth = font.widthOfTextAtSize(studentName, fontSize)
-
-        firstPage.drawText(studentName, {
-          x: centerX - textWidth / 2,
-          y: nameY,
-          size: fontSize,
-          font,
-          color: rgb(0, 0, 0),
-        })
-      }
+      firstPage.drawText(studentName, {
+        x: width / 2 - textWidth / 2,
+        y: nameY,
+        size: fontSize,
+        font: alexBrush,
+        color: rgb(0, 0, 0),
+      })
 
       const pdfBytes = await pdfDoc.save()
       const pdfBlob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' })
@@ -304,6 +293,24 @@ export default function CertificatesPage() {
       }
     } catch {
       toast.error('Failed to download certificate')
+    }
+  }
+
+  const handleDeleteCertificate = async (studentId: string) => {
+    try {
+      const { error } = await supabase
+        .from('certificates')
+        .delete()
+        .eq('student_id', studentId)
+      if (error) throw error
+      setCertificateStatus(prev => {
+        const next = { ...prev }
+        delete next[studentId]
+        return next
+      })
+      toast.success('Certificate deleted — you can now regenerate it')
+    } catch {
+      toast.error('Failed to delete certificate')
     }
   }
 
@@ -468,7 +475,7 @@ export default function CertificatesPage() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 items-center">
                         <Button
                           size="sm"
                           variant="ghost"
@@ -477,6 +484,17 @@ export default function CertificatesPage() {
                         >
                           <Eye size={16} />
                         </Button>
+                        {certificateStatus[student.id]?.certificate_url && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleDeleteCertificate(student.id)}
+                            title="Delete certificate so it can be regenerated"
+                            className="text-red-400 hover:text-red-600 hover:bg-red-50"
+                          >
+                            <Trash2 size={16} />
+                          </Button>
+                        )}
                         {(certificateStatus[student.id]?.email_attempts ?? 0) > 0 && (
                           <Badge variant="secondary" className="text-xs">
                             {certificateStatus[student.id].email_attempts} attempts

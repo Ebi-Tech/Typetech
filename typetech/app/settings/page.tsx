@@ -26,9 +26,7 @@ export default function SettingsPage() {
   const [requireMinAttendance, setRequireMinAttendance] = useState(false)
   const [templateUploading, setTemplateUploading] = useState(false)
   const [templateExists, setTemplateExists] = useState(false)
-  const [nameX, setNameX] = useState('306')
   const [nameY, setNameY] = useState('350')
-  const [nameFontSize, setNameFontSize] = useState('36')
   const [selectedTerm, setSelectedTerm] = useState('trimester1')
   const [academicYear, setAcademicYear] = useState('2026')
   const [users, setUsers] = useState<User[]>([])
@@ -83,9 +81,7 @@ export default function SettingsPage() {
   useEffect(() => {
     fetchCohorts()
     // Load saved position settings from localStorage
-    setNameX(localStorage.getItem('cert_name_x') || '306')
     setNameY(localStorage.getItem('cert_name_y') || '350')
-    setNameFontSize(localStorage.getItem('cert_name_size') || '36')
     setSelectedTerm(localStorage.getItem('selected_term') || 'trimester1')
     setAcademicYear(localStorage.getItem('academic_year') || '2026')
 
@@ -217,9 +213,7 @@ export default function SettingsPage() {
 
   const handleSave = async () => {
     setSaving(true)
-    localStorage.setItem('cert_name_x', nameX)
     localStorage.setItem('cert_name_y', nameY)
-    localStorage.setItem('cert_name_size', nameFontSize)
     localStorage.setItem('selected_term', selectedTerm)
     localStorage.setItem('academic_year', academicYear)
     toast.success('Settings saved')
@@ -339,30 +333,17 @@ export default function SettingsPage() {
               <div className="space-y-3">
                 <h3 className="font-medium">Name Position on Certificate</h3>
                 <p className="text-xs text-gray-500">
-                  PDF coordinates start from the bottom-left. For a standard Canva certificate, try X: 306, Y: 350.
-                  Adjust until the name lands in the right spot, then click Save Changes.
+                  The name is always horizontally centered at font size 48 (Alex Brush).
+                  Adjust the Y value (distance from the bottom of the page in points) until
+                  the name lands on the correct line of your template, then click Save Changes.
                 </p>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                  <Input
-                    label="Center X (points)"
-                    type="number"
-                    value={nameX}
-                    onChange={e => setNameX(e.target.value)}
-                    placeholder="306"
-                  />
+                <div className="max-w-xs">
                   <Input
                     label="Y from bottom (points)"
                     type="number"
                     value={nameY}
                     onChange={e => setNameY(e.target.value)}
                     placeholder="350"
-                  />
-                  <Input
-                    label="Font Size"
-                    type="number"
-                    value={nameFontSize}
-                    onChange={e => setNameFontSize(e.target.value)}
-                    placeholder="36"
                   />
                 </div>
               </div>
