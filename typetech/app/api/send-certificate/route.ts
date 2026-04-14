@@ -1,13 +1,44 @@
 import { NextResponse } from 'next/server'
 import nodemailer from 'nodemailer'
 
+function toHtml(text: string) {
+  return text
+    .split(/\n\n+/)
+    .map(p => `<p style="margin: 0 0 12px 0;">${p.replace(/\n/g, '<br />')}</p>`)
+    .join('')
+}
+
 export async function POST(request: Request) {
   try {
-    const { studentName, studentEmail, certificateUrl } = await request.json()
+    const { studentName, studentEmail, certificateUrl, subject, body } = await request.json()
 
     if (!studentName || !studentEmail || !certificateUrl) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
+
+    const firstName = studentName.split(' ')[0]
+
+    // Use custom template if provided, otherwise fall back to default
+    const emailSubject = subject
+      ? subject.replace(/\{\{name\}\}/g, firstName).replace(/\{\{fullname\}\}/g, studentName)
+      : 'Congratulations! Your Typing Class Certificate'
+
+    const emailHtml = body
+      ? `<div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">${
+          toHtml(
+            body
+              .replace(/\{\{name\}\}/g, firstName)
+              .replace(/\{\{fullname\}\}/g, studentName)
+          )
+        }</div>`
+      : `<div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+          <h2 style="color: #2563eb;">Congratulations, ${studentName}!</h2>
+          <p>Your certificate of completion for the Typing Class is attached to this email.</p>
+          <p>Well done on completing the curriculum and meeting the requirements of 40 WPM!</p>
+          <p style="margin-top: 24px; color: #6b7280; font-size: 13px;">
+            Keep improving yourself!<br />Turikumwe 🎉
+          </p>
+        </div>`
 
     const pdfResponse = await fetch(certificateUrl)
     if (!pdfResponse.ok) throw new Error('Failed to fetch certificate PDF')
@@ -26,18 +57,8 @@ export async function POST(request: Request) {
     await transporter.sendMail({
       from: process.env.SMTP_FROM_EMAIL,
       to: studentEmail,
-      subject: 'Congratulations! Your Typing Class Certificate',
-      html: `
-        <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
-          <h2 style="color: #2563eb;">Congratulations, ${studentName}!</h2>
-          <p>Your certificate of completion for the Typing Class is attached to this email.</p>
-          <p>Well done on completing the curriculum and meeting the requirements of 40 WPM!</p>
-          <p style="margin-top: 24px; color: #6b7280; font-size: 13px;">
-            Keeping improving yourself!<BR />
-            Turikumwe 🎉
-          </p>
-        </div>
-      `,
+      subject: emailSubject,
+      html: emailHtml,
       attachments: [
         {
           filename: `${studentName.replace(/\s+/g, '_')}_Certificate.pdf`,

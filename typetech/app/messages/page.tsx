@@ -219,6 +219,18 @@ export default function MessagesPage() {
     else { setSubject(''); setBody('') }
   }
 
+  const selectedIsSaved = savedTemplates.some(t => t.id === selectedTemplateId)
+
+  const handleUpdateTemplate = () => {
+    if (!selectedIsSaved || !subject || !body) return
+    const updated = savedTemplates.map(t =>
+      t.id === selectedTemplateId ? { ...t, subject, body } : t
+    )
+    setSavedTemplates(updated)
+    localStorage.setItem(TEMPLATES_KEY, JSON.stringify(updated))
+    toast.success('Template updated')
+  }
+
   const handleSaveTemplate = () => {
     if (!newTemplateName.trim() || !subject || !body) return
     const newTpl: Template = { id: `saved-${Date.now()}`, name: newTemplateName.trim(), subject, body }
@@ -337,10 +349,18 @@ export default function MessagesPage() {
                 <code className="bg-gray-100 px-1 rounded">{'{{fullname}}'}</code> → full name
               </p>
             </div>
-            <Button variant="outline" size="sm" onClick={() => setShowSaveTemplate(true)} disabled={!subject || !body}>
-              <Save size={14} className="mr-1.5" />
-              Save as Template
-            </Button>
+            <div className="flex gap-2">
+              {selectedIsSaved && (
+                <Button variant="outline" size="sm" onClick={handleUpdateTemplate} disabled={!subject || !body}>
+                  <Save size={14} className="mr-1.5" />
+                  Update Template
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={() => setShowSaveTemplate(true)} disabled={!subject || !body}>
+                <Save size={14} className="mr-1.5" />
+                Save as New
+              </Button>
+            </div>
           </Card>
 
           {/* Preview */}

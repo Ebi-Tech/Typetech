@@ -10,8 +10,36 @@ import { Badge } from '@/components/ui/Badge'
 import { Download, Mail, CheckCircle, Eye, Trash2 } from 'lucide-react'
 import { PDFDocument, rgb } from 'pdf-lib'
 import fontkit from '@pdf-lib/fontkit'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/Dialog'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
+
+const TEMPLATES_KEY = 'typetech_message_templates'
+
+const BUILTIN_EMAIL_TEMPLATES: EmailTemplate[] = [
+  {
+    id: 'congratulations',
+    name: 'Congratulations — Passed',
+    subject: 'Congratulations on Completing the Typing Course! 🎉',
+    body: `Hi {{name}},
+
+Congratulations! You have successfully completed the ALU Typing Class. We're really proud of the effort and commitment you've shown throughout this course.
+
+Your certificate is attached to this email. Keep practising and continuing to improve!
+
+Well done,
+The Typetech Team`,
+  },
+]
+
+interface EmailTemplate {
+  id: string
+  name: string
+  subject: string
+  body: string
+}
 
 interface Cohort {
   id: string
@@ -35,6 +63,11 @@ export default function CertificatesPage() {
   const [selectedCohort, setSelectedCohort] = useState<string | null>(null)
   const [cohorts, setCohorts] = useState<Cohort[]>([])
   const [certificateStatus, setCertificateStatus] = useState<Record<string, CertStatus>>({})
+
+  // Email template picker
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false)
+  const [savedEmailTemplates, setSavedEmailTemplates] = useState<EmailTemplate[]>([])
+  const [pickedTemplateId, setPickedTemplateId] = useState('congratulations')
 
   // Fetch cohorts
   const fetchCohorts = async () => {
@@ -61,6 +94,17 @@ export default function CertificatesPage() {
     if (filter === 'pass') return student.final_status === 'Pass'
     return true
   })
+
+  // Load saved message templates from localStorage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(TEMPLATES_KEY)
+      if (stored) setSavedEmailTemplates(JSON.parse(stored))
+    } catch { /* ignore */ }
+  }, [])
+
+  const allEmailTemplates = [...BUILTIN_EMAIL_TEMPLATES, ...savedEmailTemplates]
+  const pickedTemplate = allEmailTemplates.find(t => t.id === pickedTemplateId) ?? BUILTIN_EMAIL_TEMPLATES[0]
 
   // Load certificate status for students
   useEffect(() => {
@@ -210,12 +254,16 @@ export default function CertificatesPage() {
     setGenerating(false)
   }
 
-  const handleSendEmails = async () => {
+  const openTemplatePicker = () => {
     if (selectedStudents.length === 0) {
       toast.error('Select at least one student')
       return
     }
+    setShowTemplatePicker(true)
+  }
 
+  const handleSendEmails = async () => {
+    setShowTemplatePicker(false)
     setSending(true)
     let success = 0
     let failed = 0
@@ -230,7 +278,6 @@ export default function CertificatesPage() {
           throw new Error('Generate the certificate first before emailing')
         }
 
-        // Actually send the email with PDF attached
         const res = await fetch('/api/send-certificate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -238,52 +285,43 @@ export default function CertificatesPage() {
             studentName: student.name,
             studentEmail: student.email,
             certificateUrl: cert.certificate_url,
+            subject: pickedTemplate.subject,
+            body: pickedTemplate.body,
           }),
         })
 
         if (!res.ok) throw new Error('Email failed')
 
-        // Mark as sent in DB
-        await supabase
-          .from('certificates')
-          .update({
-            email_sent: true,
-            email_sent_at: new Date().toISOString(),
-            email_attempts: (cert.email_attempts || 0) + 1
-          })
-          .eq('student_id', studentId)
+        await supabase.from('certificates').update({
+          email_sent: true,
+          email_sent_at: new Date().toISOString(),
+          email_attempts: (cert.email_attempts || 0) + 1,
+        }).eq('student_id', studentId)
 
-        await supabase
-          .from('students')
-          .update({
-            certificate_emailed: true,
-            certificate_emailed_at: new Date().toISOString()
-          })
-          .eq('id', studentId)
+        await supabase.from('students').update({
+          certificate_emailed: true,
+          certificate_emailed_at: new Date().toISOString(),
+        }).eq('id', studentId)
 
-        await supabase
-          .from('email_logs')
-          .insert([{
-            student_id: studentId,
-            email_type: 'certificate',
-            recipient_email: student.email,
-            subject: 'Your Typing Class Certificate of Completion',
-            status: 'sent',
-            metadata: { certificate_url: cert.certificate_url }
-          }])
+        await supabase.from('email_logs').insert([{
+          student_id: studentId,
+          email_type: 'certificate',
+          recipient_email: student.email,
+          subject: pickedTemplate.subject,
+          status: 'sent',
+          metadata: { certificate_url: cert.certificate_url },
+        }])
 
         success++
       } catch (error) {
         failed++
-        await supabase
-          .from('email_logs')
-          .insert([{
-            student_id: studentId,
-            email_type: 'certificate',
-            recipient_email: student.email,
-            status: 'failed',
-            error_message: error instanceof Error ? error.message : 'Unknown error'
-          }])
+        await supabase.from('email_logs').insert([{
+          student_id: studentId,
+          email_type: 'certificate',
+          recipient_email: student.email,
+          status: 'failed',
+          error_message: error instanceof Error ? error.message : 'Unknown error',
+        }])
       }
     }
 
@@ -417,7 +455,7 @@ export default function CertificatesPage() {
           {generating ? 'Generating...' : 'Generate Selected'}
         </Button>
         <Button
-          onClick={handleSendEmails}
+          onClick={openTemplatePicker}
           disabled={sending || selectedStudents.length === 0}
         >
           <Mail size={16} className="mr-2" />
@@ -521,6 +559,38 @@ export default function CertificatesPage() {
           </table>
         </div>
       </Card>
+
+      {/* Template picker dialog */}
+      <Dialog open={showTemplatePicker} onOpenChange={setShowTemplatePicker}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Choose email template</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-1">
+            {allEmailTemplates.map(tpl => (
+              <button
+                key={tpl.id}
+                onClick={() => setPickedTemplateId(tpl.id)}
+                className={`w-full text-left px-3 py-2.5 rounded-lg border text-sm transition-colors ${
+                  pickedTemplateId === tpl.id
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-gray-700'
+                }`}
+              >
+                <p className="font-medium">{tpl.name}</p>
+                <p className="text-xs text-gray-400 truncate mt-0.5">{tpl.subject}</p>
+              </button>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowTemplatePicker(false)}>Cancel</Button>
+            <Button onClick={handleSendEmails} disabled={sending}>
+              <Mail size={14} className="mr-1.5" />
+              Send to {selectedStudents.length} student{selectedStudents.length !== 1 ? 's' : ''}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
