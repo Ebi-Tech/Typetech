@@ -128,7 +128,8 @@ export default function CertificatesPage() {
 
       const fontSize = 48
       // Always center horizontally; Y is configurable from Settings > Certificates
-      const nameY = Number(localStorage.getItem('cert_name_y') || height * 0.45)
+      // Default 308 = ~48% from top on the A4 landscape template (842×595 pts)
+      const nameY = Number(localStorage.getItem('cert_name_y') || 308)
       const textWidth = alexBrush.widthOfTextAtSize(studentName, fontSize)
 
       firstPage.drawText(studentName, {
@@ -295,10 +296,11 @@ export default function CertificatesPage() {
     try {
       const cert = certificateStatus[studentId]
       if (cert?.certificate_url) {
-        window.open(cert.certificate_url, '_blank')
+        // Append timestamp to bypass browser cache so a regenerated cert always shows fresh
+        window.open(`${cert.certificate_url}?v=${Date.now()}`, '_blank')
       } else {
         const url = await generateCertificate(studentId, studentName)
-        window.open(url, '_blank')
+        window.open(`${url}?v=${Date.now()}`, '_blank')
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error'

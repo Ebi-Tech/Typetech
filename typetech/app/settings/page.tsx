@@ -26,7 +26,7 @@ export default function SettingsPage() {
   const [requireMinAttendance, setRequireMinAttendance] = useState(false)
   const [templateUploading, setTemplateUploading] = useState(false)
   const [templateExists, setTemplateExists] = useState(false)
-  const [nameY, setNameY] = useState('350')
+  const [nameY, setNameY] = useState('308')
   const [selectedTerm, setSelectedTerm] = useState('trimester1')
   const [academicYear, setAcademicYear] = useState('2026')
   const [users, setUsers] = useState<User[]>([])
@@ -81,7 +81,7 @@ export default function SettingsPage() {
   useEffect(() => {
     fetchCohorts()
     // Load saved position settings from localStorage
-    setNameY(localStorage.getItem('cert_name_y') || '350')
+    setNameY(localStorage.getItem('cert_name_y') || '308')
     setSelectedTerm(localStorage.getItem('selected_term') || 'trimester1')
     setAcademicYear(localStorage.getItem('academic_year') || '2026')
 
