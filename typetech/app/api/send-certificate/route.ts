@@ -24,15 +24,15 @@ export async function POST(request: Request) {
       : 'Congratulations! Your Typing Class Certificate'
 
     const emailHtml = body
-      ? `<div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">${
+      ? `<div style="font-family: sans-serif;">${
           toHtml(
             body
               .replace(/\{\{name\}\}/g, firstName)
               .replace(/\{\{fullname\}\}/g, studentName)
           )
         }</div>`
-      : `<div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
-          <h2 style="color: #2563eb;">Congratulations, ${studentName}!</h2>
+      : `<div style="font-family: sans-serif;">
+          <p>Congratulations, ${studentName}!</p>
           <p>Your certificate of completion for the Typing Class is attached to this email.</p>
           <p>Well done on completing the curriculum and meeting the requirements of 40 WPM!</p>
           <p style="margin-top: 24px; color: #6b7280; font-size: 13px;">

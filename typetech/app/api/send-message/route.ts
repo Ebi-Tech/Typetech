@@ -53,7 +53,7 @@ export async function POST(request: Request) {
               .join('')
 
         const html = `
-          <div style="max-width:560px;margin:0 auto;font-family:sans-serif;">
+          <div style="font-family:sans-serif;">
             ${htmlBody}
             <p style="margin-top:32px;font-size:12px;color:#9ca3af;">
               This message was sent via Typetech — ALU Typing Class Admin.
