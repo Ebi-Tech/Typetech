@@ -120,8 +120,8 @@ export default function CertificatesPage() {
 
       // Embed Alex Brush (hosted in /public/fonts/)
       const fontResponse = await fetch('/fonts/AlexBrush-Regular.ttf')
-      if (!fontResponse.ok) throw new Error('Alex Brush font not found')
-      const fontBytes = await fontResponse.arrayBuffer()
+      if (!fontResponse.ok) throw new Error('Alex Brush font not found at /fonts/AlexBrush-Regular.ttf')
+      const fontBytes = new Uint8Array(await fontResponse.arrayBuffer())
       const alexBrush = await pdfDoc.embedFont(fontBytes)
 
       const fontSize = 48
@@ -181,7 +181,7 @@ export default function CertificatesPage() {
 
     setGenerating(true)
     let success = 0
-    let failed = 0
+    const errors: string[] = []
 
     for (const studentId of selectedStudents) {
       const student = students?.find(s => s.id === studentId)
@@ -190,13 +190,20 @@ export default function CertificatesPage() {
       try {
         await generateCertificate(studentId, student.name)
         success++
-      } catch {
-        failed++
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error'
+        errors.push(`${student.name}: ${msg}`)
+        console.error('Certificate generation failed for', student.name, err)
       }
     }
 
     await refresh()
-    toast.success(`Generated ${success} certificates${failed > 0 ? `, ${failed} failed` : ''}`)
+    if (errors.length > 0) {
+      toast.error(`${errors.length} failed: ${errors[0]}${errors.length > 1 ? ` (+${errors.length - 1} more)` : ''}`, { duration: 8000 })
+    }
+    if (success > 0) {
+      toast.success(`Generated ${success} certificate${success !== 1 ? 's' : ''}`)
+    }
     setGenerating(false)
   }
 
@@ -291,8 +298,9 @@ export default function CertificatesPage() {
         const url = await generateCertificate(studentId, studentName)
         window.open(url, '_blank')
       }
-    } catch {
-      toast.error('Failed to download certificate')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      toast.error(`Failed: ${msg}`, { duration: 8000 })
     }
   }
 
