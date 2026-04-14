@@ -111,8 +111,6 @@ const FILTER_OPTIONS = [
   { value: 'pick',   label: 'Select Specific Students' },
 ]
 
-const TEMPLATES_KEY = 'typetech_message_templates'
-
 export default function MessagesPage() {
   const [students, setStudents]         = useState<Student[]>([])
   const [cohorts, setCohorts]           = useState<Cohort[]>([])
@@ -144,21 +142,19 @@ export default function MessagesPage() {
   // ── Load ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     const load = async () => {
-      const [{ data: studs }, { data: cohortData }] = await Promise.all([
+      const [{ data: studs }, { data: cohortData }, { data: templateData }] = await Promise.all([
         supabase.from('students').select('id, name, email, cohort_id, typing_style, final_status').order('name'),
         supabase.from('cohorts').select('id, name'),
+        supabase.from('message_templates').select('*').order('created_at'),
       ])
       setStudents(studs || [])
       setCohorts((cohortData || []).sort((a, b) =>
         a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
       ))
+      setSavedTemplates(templateData || [])
       setLoading(false)
     }
     load()
-    try {
-      const stored = localStorage.getItem(TEMPLATES_KEY)
-      if (stored) setSavedTemplates(JSON.parse(stored))
-    } catch { /* ignore */ }
   }, [])
 
   const allTemplates = useMemo(() => [...BUILTIN_TEMPLATES, ...savedTemplates], [savedTemplates])
@@ -221,31 +217,38 @@ export default function MessagesPage() {
 
   const selectedIsSaved = savedTemplates.some(t => t.id === selectedTemplateId)
 
-  const handleUpdateTemplate = () => {
+  const handleUpdateTemplate = async () => {
     if (!selectedIsSaved || !subject || !body) return
-    const updated = savedTemplates.map(t =>
+    const { error } = await supabase
+      .from('message_templates')
+      .update({ subject, body })
+      .eq('id', selectedTemplateId)
+    if (error) { toast.error('Failed to update template'); return }
+    setSavedTemplates(prev => prev.map(t =>
       t.id === selectedTemplateId ? { ...t, subject, body } : t
-    )
-    setSavedTemplates(updated)
-    localStorage.setItem(TEMPLATES_KEY, JSON.stringify(updated))
+    ))
     toast.success('Template updated')
   }
 
-  const handleSaveTemplate = () => {
+  const handleSaveTemplate = async () => {
     if (!newTemplateName.trim() || !subject || !body) return
-    const newTpl: Template = { id: `saved-${Date.now()}`, name: newTemplateName.trim(), subject, body }
-    const updated = [...savedTemplates, newTpl]
-    setSavedTemplates(updated)
-    localStorage.setItem(TEMPLATES_KEY, JSON.stringify(updated))
-    toast.success(`Template "${newTpl.name}" saved`)
+    const { data, error } = await supabase
+      .from('message_templates')
+      .insert({ name: newTemplateName.trim(), subject, body })
+      .select()
+      .single()
+    if (error || !data) { toast.error('Failed to save template'); return }
+    setSavedTemplates(prev => [...prev, data])
+    setTemplateId(data.id)
+    toast.success(`Template "${data.name}" saved`)
     setShowSaveTemplate(false)
     setNewTemplateName('')
   }
 
-  const handleDeleteSavedTemplate = (id: string) => {
-    const updated = savedTemplates.filter(t => t.id !== id)
-    setSavedTemplates(updated)
-    localStorage.setItem(TEMPLATES_KEY, JSON.stringify(updated))
+  const handleDeleteSavedTemplate = async (id: string) => {
+    const { error } = await supabase.from('message_templates').delete().eq('id', id)
+    if (error) { toast.error('Failed to delete template'); return }
+    setSavedTemplates(prev => prev.filter(t => t.id !== id))
     if (selectedTemplateId === id) { setTemplateId('custom'); setSubject(''); setBody('') }
     toast.success('Template deleted')
   }

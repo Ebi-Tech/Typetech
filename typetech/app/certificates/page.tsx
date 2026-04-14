@@ -16,7 +16,6 @@ import {
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
 
-const TEMPLATES_KEY = 'typetech_message_templates'
 
 const BUILTIN_EMAIL_TEMPLATES: EmailTemplate[] = [
   {
@@ -95,12 +94,11 @@ export default function CertificatesPage() {
     return true
   })
 
-  // Load saved message templates from localStorage
+  // Load saved message templates from Supabase
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(TEMPLATES_KEY)
-      if (stored) setSavedEmailTemplates(JSON.parse(stored))
-    } catch { /* ignore */ }
+    supabase.from('message_templates').select('*').order('created_at').then(({ data }) => {
+      setSavedEmailTemplates(data || [])
+    })
   }, [])
 
   const allEmailTemplates = [...BUILTIN_EMAIL_TEMPLATES, ...savedEmailTemplates]
@@ -162,7 +160,7 @@ export default function CertificatesPage() {
       pdfDoc.registerFontkit(fontkit)
       const pages = pdfDoc.getPages()
       const firstPage = pages[0]
-      const { width, height } = firstPage.getSize()
+      const { width } = firstPage.getSize()
 
       // Embed Alex Brush (hosted in /public/fonts/)
       const fontResponse = await fetch('/fonts/AlexBrush-Regular.ttf')
