@@ -57,6 +57,7 @@ export async function POST(request: Request) {
     await transporter.sendMail({
       from: process.env.SMTP_FROM_EMAIL,
       to: studentEmail,
+      cc: process.env.SMTP_CC_EMAIL || undefined,
       subject: emailSubject,
       html: emailHtml,
       attachments: [

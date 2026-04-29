@@ -64,6 +64,7 @@ export async function POST(request: Request) {
         await transporter.sendMail({
           from: process.env.SMTP_FROM_EMAIL,
           to: recipient.email,
+          cc: process.env.SMTP_CC_EMAIL || undefined,
           subject: personalizedSubject,
           html,
         })
