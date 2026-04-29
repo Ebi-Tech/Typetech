@@ -10,7 +10,7 @@ function toHtml(text: string) {
 
 export async function POST(request: Request) {
   try {
-    const { studentName, studentEmail, certificateUrl, subject, body } = await request.json()
+    const { studentName, studentEmail, certificateUrl, subject, body, cc } = await request.json()
 
     if (!studentName || !studentEmail || !certificateUrl) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -57,7 +57,7 @@ export async function POST(request: Request) {
     await transporter.sendMail({
       from: process.env.SMTP_FROM_EMAIL,
       to: studentEmail,
-      cc: process.env.SMTP_CC_EMAIL || undefined,
+      cc: cc?.length ? cc : undefined,
       subject: emailSubject,
       html: emailHtml,
       attachments: [

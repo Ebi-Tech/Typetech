@@ -17,6 +17,10 @@ import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
 
 
+const CC_PRESETS = [
+  { label: 'SDL Comms', email: 'sdl-lab@comms.alueducation.com' },
+]
+
 const BUILTIN_EMAIL_TEMPLATES: EmailTemplate[] = [
   {
     id: 'congratulations',
@@ -67,6 +71,7 @@ export default function CertificatesPage() {
   const [showTemplatePicker, setShowTemplatePicker] = useState(false)
   const [savedEmailTemplates, setSavedEmailTemplates] = useState<EmailTemplate[]>([])
   const [pickedTemplateId, setPickedTemplateId] = useState('congratulations')
+  const [selectedCc, setSelectedCc] = useState<Set<string>>(new Set())
 
   // Fetch cohorts
   const fetchCohorts = async () => {
@@ -285,6 +290,7 @@ export default function CertificatesPage() {
             certificateUrl: cert.certificate_url,
             subject: pickedTemplate.subject,
             body: pickedTemplate.body,
+            cc: Array.from(selectedCc),
           }),
         })
 
@@ -579,6 +585,32 @@ export default function CertificatesPage() {
                 <p className="text-xs text-gray-400 truncate mt-0.5">{tpl.subject}</p>
               </button>
             ))}
+          </div>
+
+          <div className="border-t pt-3">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">CC</p>
+            <div className="space-y-1.5">
+              {CC_PRESETS.map(preset => (
+                <label key={preset.email} className="flex items-center gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedCc.has(preset.email)}
+                    onChange={() => {
+                      setSelectedCc(prev => {
+                        const next = new Set(prev)
+                        next.has(preset.email) ? next.delete(preset.email) : next.add(preset.email)
+                        return next
+                      })
+                    }}
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                  />
+                  <div>
+                    <span className="text-sm font-medium text-gray-700">{preset.label}</span>
+                    <span className="text-xs text-gray-400 ml-1.5">{preset.email}</span>
+                  </div>
+                </label>
+              ))}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowTemplatePicker(false)}>Cancel</Button>
