@@ -20,7 +20,12 @@ export async function POST(request: Request) {
 
     const arrayBuffer = await file.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
-    const fileName = `${studentName.replace(/\s+/g, '_')}_Certificate.pdf`
+    const safeName = studentName
+      .normalize('NFD')                  // decompose accented chars (é → e + ́)
+      .replace(/[̀-ͯ]/g, '')   // strip the accent marks
+      .replace(/\s+/g, '_')             // spaces to underscores
+      .replace(/[^a-zA-Z0-9_-]/g, '')   // remove any remaining non-ASCII
+    const fileName = `${safeName}_Certificate.pdf`
 
     const { error: uploadError } = await supabaseAdmin.storage
       .from('certificates')
