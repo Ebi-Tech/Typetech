@@ -215,15 +215,17 @@ export default function AttendancePage() {
     setSyncing(true)
     if (value === 'blank-grade') {
       setGradeData(prev => { const next = { ...prev }; delete next[studentId]; return next })
-      await Promise.all([
-        supabase.from('week_data').update({ grade: null }).eq('student_id', studentId).eq('week_number', currentWeek),
-        supabase.from('students').update({ final_status: null }).eq('id', studentId),
-      ])
+      await supabase.from('week_data').update({ grade: null }).eq('student_id', studentId).eq('week_number', currentWeek)
+      // Never null out final_status from a weekly grade change — manage it via the Edit dialog
     } else {
       setGradeData(prev => ({ ...prev, [studentId]: value }))
+      const currentFinalStatus = students?.find(s => s.id === studentId)?.final_status
       await Promise.all([
         saveWeekData(studentId, currentWeek, { grade: value }),
-        supabase.from('students').update({ final_status: value }).eq('id', studentId),
+        // Only propagate to final_status if not already marked Complete (prevents back-navigation overwrites)
+        currentFinalStatus !== 'Complete'
+          ? supabase.from('students').update({ final_status: value }).eq('id', studentId)
+          : Promise.resolve(),
       ])
     }
     setSyncing(false)
@@ -342,12 +344,10 @@ export default function AttendancePage() {
           }))
         }
 
-        // Sync to students table so dashboard/certificates reflect changes
-        const studentUpdates: Record<string, string> = {}
-        if (grade) studentUpdates.final_status = grade
-        if (typingStyle) studentUpdates.typing_style = typingStyle
-        if (Object.keys(studentUpdates).length > 0) {
-          saves.push(supabase.from('students').update(studentUpdates).eq('id', student.id))
+        // Sync typing_style to students table so dashboard reflects changes
+        // Note: final_status is intentionally NOT synced here — manage it via the Edit dialog
+        if (typingStyle) {
+          saves.push(supabase.from('students').update({ typing_style: typingStyle }).eq('id', student.id))
         }
 
         return Promise.all(saves)

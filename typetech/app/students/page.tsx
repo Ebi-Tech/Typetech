@@ -97,6 +97,7 @@ export default function StudentsPage() {
       name: formData.get('name') as string,
       email: formData.get('email') as string,
       cohort_id: editCohortId || null,
+      final_status: editingStudent.final_status || null,
       notes: formData.get('notes') as string,
     }
     try {
@@ -305,6 +306,16 @@ export default function StudentsPage() {
                 {cohorts.map(cohort => (
                   <SelectItem key={cohort.id} value={cohort.id}>{cohort.name}</SelectItem>
                 ))}
+              </Select>
+              <Select
+                label="Final Status"
+                value={editingStudent.final_status || 'Pending'}
+                onValueChange={val => setEditingStudent(prev => prev ? { ...prev, final_status: val as 'Complete' | 'Pass' | 'Fail' | 'Pending' } : prev)}
+              >
+                <SelectItem value="Pending">Pending</SelectItem>
+                <SelectItem value="Pass">Pass</SelectItem>
+                <SelectItem value="Complete">Complete</SelectItem>
+                <SelectItem value="Fail">Fail</SelectItem>
               </Select>
               <Input
                 name="notes"
