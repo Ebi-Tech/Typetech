@@ -568,48 +568,70 @@ export default function AttendancePage() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {displayedStudents?.map((student) => (
-                <tr key={student.id} className="hover:bg-gray-50">
-                  <td className="px-3 md:px-6 py-3 md:py-4 whitespace-nowrap font-medium text-sm md:text-base">
-                    {student.name}
-                  </td>
-                  <td className="hidden md:table-cell px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                    {student.email}
-                  </td>
-                  <td className="px-3 md:px-6 py-3 md:py-4 whitespace-nowrap">
-                    <Select
-                      value={typingStyleData[student.id] || 'blank-style'}
-                      onValueChange={(value) => handleTypingStyleChange(student.id, value)}
-                    >
-                      <SelectItem value="blank-style">—</SelectItem>
-                      <SelectItem value="Hunting">Hunting</SelectItem>
-                      <SelectItem value="Homerow">Homerow</SelectItem>
-                    </Select>
-                  </td>
-                  <td className="px-3 md:px-6 py-3 md:py-4 whitespace-nowrap">
-                    <Select
-                      value={gradeData[student.id] || 'blank-grade'}
-                      onValueChange={(value) => handleGradeChange(student.id, value)}
-                    >
-                      <SelectItem value="blank-grade">—</SelectItem>
-                      <SelectItem value="Pass">Pass</SelectItem>
-                      <SelectItem value="Fail">Fail</SelectItem>
-                      <SelectItem value="Complete">Complete</SelectItem>
-                    </Select>
-                  </td>
-                  <td className="px-3 md:px-6 py-3 md:py-4 whitespace-nowrap">
-                    <Select
-                      value={attendanceData[student.id] || 'blank-status'}
-                      onValueChange={(value) => handleStatusChange(student.id, value)}
-                    >
-                      <SelectItem value="blank-status">—</SelectItem>
-                      <SelectItem value="Present">Present</SelectItem>
-                      <SelectItem value="Late">Late</SelectItem>
-                      <SelectItem value="Absent">Absent</SelectItem>
-                    </Select>
-                  </td>
-                </tr>
-              ))}
+              {displayedStudents?.map((student) => {
+                const isComplete = student.final_status === 'Complete'
+                return (
+                  <tr key={student.id} className={isComplete ? 'bg-green-50' : 'hover:bg-gray-50'}>
+                    <td className="px-3 md:px-6 py-3 md:py-4 whitespace-nowrap font-medium text-sm md:text-base">
+                      <div className="flex items-center gap-2">
+                        {student.name}
+                        {isComplete && (
+                          <span className="text-xs font-semibold text-green-700 bg-green-100 border border-green-200 rounded px-1.5 py-0.5">
+                            Complete
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="hidden md:table-cell px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      {student.email}
+                    </td>
+                    <td className="px-3 md:px-6 py-3 md:py-4 whitespace-nowrap">
+                      {isComplete ? (
+                        <span className="text-sm text-gray-400">{typingStyleData[student.id] || '—'}</span>
+                      ) : (
+                        <Select
+                          value={typingStyleData[student.id] || 'blank-style'}
+                          onValueChange={(value) => handleTypingStyleChange(student.id, value)}
+                        >
+                          <SelectItem value="blank-style">—</SelectItem>
+                          <SelectItem value="Hunting">Hunting</SelectItem>
+                          <SelectItem value="Homerow">Homerow</SelectItem>
+                        </Select>
+                      )}
+                    </td>
+                    <td className="px-3 md:px-6 py-3 md:py-4 whitespace-nowrap">
+                      {isComplete ? (
+                        <span className="text-sm font-medium text-green-700">Complete</span>
+                      ) : (
+                        <Select
+                          value={gradeData[student.id] || 'blank-grade'}
+                          onValueChange={(value) => handleGradeChange(student.id, value)}
+                        >
+                          <SelectItem value="blank-grade">—</SelectItem>
+                          <SelectItem value="Pass">Pass</SelectItem>
+                          <SelectItem value="Fail">Fail</SelectItem>
+                          <SelectItem value="Complete">Complete</SelectItem>
+                        </Select>
+                      )}
+                    </td>
+                    <td className="px-3 md:px-6 py-3 md:py-4 whitespace-nowrap">
+                      {isComplete ? (
+                        <span className="text-sm text-gray-400">{attendanceData[student.id] || '—'}</span>
+                      ) : (
+                        <Select
+                          value={attendanceData[student.id] || 'blank-status'}
+                          onValueChange={(value) => handleStatusChange(student.id, value)}
+                        >
+                          <SelectItem value="blank-status">—</SelectItem>
+                          <SelectItem value="Present">Present</SelectItem>
+                          <SelectItem value="Late">Late</SelectItem>
+                          <SelectItem value="Absent">Absent</SelectItem>
+                        </Select>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

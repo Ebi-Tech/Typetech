@@ -50,7 +50,7 @@ export async function POST(request: Request) {
       to: email,
       subject: "You've been invited to Typetech",
       html: `
-        <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+        <div style="font-family: sans-serif;">
           <h2 style="color: #2563eb;">You've been invited to Typetech</h2>
           <p>You've been invited to access the Typetech typing class admin dashboard.</p>
           <p>Click the link below to sign in. This link expires in 7 days.</p>

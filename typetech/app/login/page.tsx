@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/Button'
@@ -8,14 +8,15 @@ import { Card } from '@/components/ui/Card'
 
 export default function LoginPage() {
   const router = useRouter()
+  const [unauthorized, setUnauthorized] = useState(false)
 
   useEffect(() => {
-    // Check if user is already logged in
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        router.push('/dashboard')
-      }
+      if (session) router.push('/dashboard')
     })
+    if (new URLSearchParams(window.location.search).get('error') === 'unauthorized') {
+      setUnauthorized(true)
+    }
   }, [router])
 
   const handleGoogleLogin = async () => {
@@ -45,7 +46,13 @@ export default function LoginPage() {
           <p className="text-gray-600 mt-2">Sign in to access the admin dashboard</p>
         </div>
 
-        <Button 
+        {unauthorized && (
+          <div className="mb-4 rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+            Access denied. You must be invited by an admin to sign in.
+          </div>
+        )}
+
+        <Button
           onClick={handleGoogleLogin}
           className="w-full flex items-center justify-center gap-2"
         >
@@ -71,7 +78,7 @@ export default function LoginPage() {
         </Button>
 
         <p className="text-xs text-gray-500 text-center mt-6">
-          Only @alueducation.com emails or invited users can sign in
+          Access is by invitation only. Contact an admin to get access.
         </p>
       </Card>
     </div>

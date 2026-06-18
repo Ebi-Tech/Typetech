@@ -79,13 +79,17 @@ export default function InvitesPage() {
       const token = generateInviteToken()
       const inviteLink = `${window.location.origin}/login?invite=${token}`
 
-      // Save invite to database
+      // Save invite to database — expires in 7 days
+      const expiresAt = new Date()
+      expiresAt.setDate(expiresAt.getDate() + 7)
+
       const { error } = await supabase
         .from('invites')
         .insert([{
           email: newInviteEmail,
           token: token,
-          status: 'pending'
+          status: 'pending',
+          expires_at: expiresAt.toISOString(),
         }])
 
       if (error) throw error
@@ -163,7 +167,7 @@ export default function InvitesPage() {
             </Button>
           </div>
           <p className="text-sm text-gray-500 mt-2">
-            Invite links expire in 7 days. Users with @alueducation.com emails can also sign in directly.
+            Invite links expire in 7 days. Only invited users can sign in — no exceptions.
           </p>
         </Card>
       ) : (
