@@ -2,6 +2,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
+import { isSuperAdmin } from '@/lib/superAdmins'
 
 export const dynamic = 'force-dynamic'
 
@@ -78,8 +79,13 @@ export async function DELETE(
     return NextResponse.json({ error: 'You cannot delete yourself' }, { status: 400 })
   }
 
-  // Prevent deleting another admin
+  // Prevent deleting the super admin, even by another admin
   const { data: { user: target } } = await supabaseAdmin.auth.admin.getUserById(targetId)
+  if (isSuperAdmin(target?.email)) {
+    return NextResponse.json({ error: 'Cannot remove the super admin account' }, { status: 403 })
+  }
+
+  // Prevent deleting another admin
   if (target?.app_metadata?.role === 'admin') {
     return NextResponse.json({ error: 'Cannot delete an admin user' }, { status: 403 })
   }

@@ -2,6 +2,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
+import { isSuperAdmin } from '@/lib/superAdmins'
 
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url)
@@ -37,21 +38,32 @@ export async function GET(request: Request) {
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
 
-    // Only invited users are allowed — no domain bypass
-    const { data: invite } = await supabaseAdmin
-      .from('invites')
-      .select('status, expires_at')
-      .eq('email', email)
-      .single()
+    const superAdmin = isSuperAdmin(email)
 
-    const isAuthorized = !!invite && (
-      invite.status === 'accepted' ||
-      (invite.status === 'pending' && new Date(invite.expires_at) > new Date())
-    )
+    // Only invited users are allowed — no domain bypass — except the
+    // hardcoded super admin(s), who always get in regardless of invite state
+    let isAuthorized = superAdmin
+    if (!isAuthorized) {
+      const { data: invite } = await supabaseAdmin
+        .from('invites')
+        .select('status, expires_at')
+        .eq('email', email)
+        .single()
+
+      isAuthorized = !!invite && (
+        invite.status === 'accepted' ||
+        (invite.status === 'pending' && new Date(invite.expires_at) > new Date())
+      )
+    }
 
     if (!isAuthorized) {
       await supabase.auth.signOut()
       return NextResponse.redirect(`${requestUrl.origin}/login?error=unauthorized`)
+    }
+
+    // Super admins are always kept promoted to admin, even if their app_metadata drifted
+    if (superAdmin && user?.app_metadata?.role !== 'admin') {
+      await supabaseAdmin.auth.admin.updateUserById(user!.id, { app_metadata: { role: 'admin' } })
     }
 
     // Mark the invite token as accepted if one was used

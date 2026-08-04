@@ -14,8 +14,28 @@ import toast from 'react-hot-toast'
 import type { User } from '@supabase/supabase-js'
 import { PDFDocument, rgb } from 'pdf-lib'
 import fontkit from '@pdf-lib/fontkit'
+import { isSuperAdmin } from '@/lib/superAdmins'
 
 const PREVIEW_NAME = 'Student Name'
+
+interface Invite {
+  id: string
+  email: string
+  status: 'pending' | 'accepted' | 'expired'
+  expires_at: string
+}
+
+type AccessState = 'super' | 'active' | 'locked'
+
+function getAccessState(email: string | null | undefined, invites: Invite[]): AccessState {
+  if (!email) return 'locked'
+  if (isSuperAdmin(email)) return 'super'
+  const invite = invites.find(i => i.email.toLowerCase() === email.toLowerCase())
+  if (!invite) return 'locked'
+  if (invite.status === 'accepted') return 'active'
+  if (invite.status === 'pending' && new Date(invite.expires_at) > new Date()) return 'active'
+  return 'locked'
+}
 
 export default function SettingsPage() {
   const [saving, setSaving] = useState(false)
@@ -41,6 +61,8 @@ export default function SettingsPage() {
   const [usersLoading, setUsersLoading] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [invites, setInvites] = useState<Invite[]>([])
+  const [grantingAccess, setGrantingAccess] = useState<string | null>(null)
   const templateInputRef = useRef<HTMLInputElement>(null)
 
   const fetchUsers = async () => {
@@ -51,6 +73,43 @@ export default function SettingsPage() {
       if (data.users) setUsers(data.users)
     } finally {
       setUsersLoading(false)
+    }
+  }
+
+  const fetchInvites = async () => {
+    const { data } = await supabase.from('invites').select('id, email, status, expires_at')
+    setInvites(data || [])
+  }
+
+  // Admin remediation for a locked-out account: upsert an accepted invite for
+  // their email so they can sign back in, without waiting for them to be re-invited
+  const handleGrantAccess = async (email: string) => {
+    setGrantingAccess(email)
+    try {
+      const expiresAt = new Date()
+      expiresAt.setFullYear(expiresAt.getFullYear() + 1)
+      const existing = invites.find(i => i.email.toLowerCase() === email.toLowerCase())
+
+      if (existing) {
+        const { error } = await supabase
+          .from('invites')
+          .update({ status: 'accepted', expires_at: expiresAt.toISOString() })
+          .eq('id', existing.id)
+        if (error) throw error
+      } else {
+        const token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+        const { error } = await supabase
+          .from('invites')
+          .insert([{ email, token, status: 'accepted', expires_at: expiresAt.toISOString() }])
+        if (error) throw error
+      }
+
+      toast.success(`Access restored for ${email}`)
+      fetchInvites()
+    } catch {
+      toast.error('Failed to grant access')
+    } finally {
+      setGrantingAccess(null)
     }
   }
 
@@ -113,6 +172,7 @@ export default function SettingsPage() {
       }
     }
     loadUsers()
+    fetchInvites()
 
     // Check if a template already exists in storage
     const checkTemplate = async () => {
@@ -131,9 +191,10 @@ export default function SettingsPage() {
       .channel('settings-users-refresh')
       .on(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'invites' },
+        { event: '*', schema: 'public', table: 'invites' },
         (payload) => {
-          if (payload.new?.status === 'accepted') {
+          fetchInvites()
+          if (payload.new && 'status' in payload.new && payload.new.status === 'accepted') {
             fetchUsers()
           }
         }
@@ -141,7 +202,7 @@ export default function SettingsPage() {
       .subscribe()
 
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible') fetchUsers()
+      if (document.visibilityState === 'visible') { fetchUsers(); fetchInvites() }
     }
     document.addEventListener('visibilitychange', handleVisibility)
 
@@ -189,7 +250,9 @@ export default function SettingsPage() {
           y,
           size,
           font: alexBrush,
-          color: rgb(0, 0, 0),
+          // Distinct blue (not black) so the live overlay is unmistakable even when
+          // it lands on top of template artwork that already has its own guide text
+          color: rgb(0.15, 0.39, 0.92),
         })
 
         const pdfBytes = await pdfDoc.save()
@@ -465,8 +528,9 @@ export default function SettingsPage() {
                 </div>
               )}
               <p className="text-xs text-gray-400 mt-3">
-                Shown with a placeholder name (&quot;{PREVIEW_NAME}&quot;) so you can dial in the
-                position and size before generating a real certificate.
+                Shown with a placeholder name (&quot;{PREVIEW_NAME}&quot;) in blue so you can dial in the
+                position and size before generating a real certificate. Real certificates stamp the
+                name in black.
               </p>
             </Card>
           </div>
@@ -536,7 +600,7 @@ export default function SettingsPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={fetchUsers}
+                  onClick={() => { fetchUsers(); fetchInvites() }}
                   disabled={usersLoading}
                 >
                   <RefreshCw size={14} className={`mr-1 ${usersLoading ? 'animate-spin' : ''}`} />
@@ -554,6 +618,7 @@ export default function SettingsPage() {
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Email</th>
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Name</th>
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Role</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Access</th>
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Last Sign In</th>
                       {isAdmin && (
                         <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Actions</th>
@@ -564,6 +629,7 @@ export default function SettingsPage() {
                     {users.map((user) => {
                       const userIsAdmin = user.app_metadata?.role === 'admin'
                       const isSelf = user.id === currentUserId
+                      const access = getAccessState(user.email, invites)
                       return (
                         <tr key={user.id} className="hover:bg-gray-50">
                           <td className="px-4 py-3 text-sm font-medium">
@@ -579,6 +645,11 @@ export default function SettingsPage() {
                               : <Badge variant="secondary">Facilitator</Badge>
                             }
                           </td>
+                          <td className="px-4 py-3">
+                            {access === 'super' && <Badge variant="success">Super Admin</Badge>}
+                            {access === 'active' && <Badge variant="success">Active</Badge>}
+                            {access === 'locked' && <Badge variant="destructive">Locked Out</Badge>}
+                          </td>
                           <td className="px-4 py-3 text-sm text-gray-600">
                             {user.last_sign_in_at
                               ? new Date(user.last_sign_in_at).toLocaleDateString()
@@ -586,27 +657,40 @@ export default function SettingsPage() {
                           </td>
                           {isAdmin && (
                             <td className="px-4 py-3">
-                              {!userIsAdmin && !isSelf && (
-                                <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2">
+                                {access === 'locked' && (
                                   <Button
                                     size="sm"
                                     variant="ghost"
-                                    onClick={() => handlePromoteUser(user.id, user.email || '—')}
-                                    className="text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                                    onClick={() => handleGrantAccess(user.email || '')}
+                                    disabled={grantingAccess === user.email}
+                                    className="text-green-600 hover:bg-green-50 hover:text-green-700"
                                   >
-                                    Make Admin
+                                    {grantingAccess === user.email ? 'Granting…' : 'Grant Access'}
                                   </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => handleDeleteUser(user.id)}
-                                    className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                                  >
-                                    <Trash2 size={14} className="mr-1" />
-                                    Remove
-                                  </Button>
-                                </div>
-                              )}
+                                )}
+                                {!userIsAdmin && !isSelf && (
+                                  <>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => handlePromoteUser(user.id, user.email || '—')}
+                                      className="text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                                    >
+                                      Make Admin
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => handleDeleteUser(user.id)}
+                                      className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                                    >
+                                      <Trash2 size={14} className="mr-1" />
+                                      Remove
+                                    </Button>
+                                  </>
+                                )}
+                              </div>
                             </td>
                           )}
                         </tr>
