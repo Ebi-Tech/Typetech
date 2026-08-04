@@ -12,6 +12,10 @@ import { Badge } from '@/components/ui/Badge'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
 import type { User } from '@supabase/supabase-js'
+import { PDFDocument, rgb } from 'pdf-lib'
+import fontkit from '@pdf-lib/fontkit'
+
+const PREVIEW_NAME = 'Student Name'
 
 export default function SettingsPage() {
   const [saving, setSaving] = useState(false)
@@ -27,6 +31,10 @@ export default function SettingsPage() {
   const [templateUploading, setTemplateUploading] = useState(false)
   const [templateExists, setTemplateExists] = useState(false)
   const [nameY, setNameY] = useState('308')
+  const [fontSize, setFontSize] = useState('48')
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const previewUrlRef = useRef<string | null>(null)
   const [selectedTerm, setSelectedTerm] = useState('trimester1')
   const [academicYear, setAcademicYear] = useState('2026')
   const [users, setUsers] = useState<User[]>([])
@@ -82,6 +90,7 @@ export default function SettingsPage() {
     fetchCohorts()
     // Load saved position settings from localStorage
     setNameY(localStorage.getItem('cert_name_y') || '308')
+    setFontSize(localStorage.getItem('cert_name_size') || '48')
     setSelectedTerm(localStorage.getItem('selected_term') || 'trimester1')
     setAcademicYear(localStorage.getItem('academic_year') || '2026')
 
@@ -139,6 +148,73 @@ export default function SettingsPage() {
     return () => {
       supabase.removeChannel(channel)
       document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [])
+
+  // Live certificate preview — redraws "Student Name" onto the template at the
+  // in-progress Y/font-size values so admins can see the effect before saving
+  useEffect(() => {
+    if (!templateExists) {
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
+      previewUrlRef.current = null
+      setPreviewUrl(null)
+      return
+    }
+
+    const timeout = setTimeout(async () => {
+      setPreviewLoading(true)
+      try {
+        const { data: templateUrlData } = supabase.storage
+          .from('certificates')
+          .getPublicUrl('certificate-template/template.pdf')
+        const templateResponse = await fetch(`${templateUrlData.publicUrl}?v=${Date.now()}`)
+        if (!templateResponse.ok) throw new Error('Template fetch failed')
+        const templateBytes = await templateResponse.arrayBuffer()
+
+        const pdfDoc = await PDFDocument.load(templateBytes)
+        pdfDoc.registerFontkit(fontkit)
+        const firstPage = pdfDoc.getPages()[0]
+        const { width } = firstPage.getSize()
+
+        const fontResponse = await fetch('/fonts/AlexBrush-Regular.ttf')
+        const fontBytes = new Uint8Array(await fontResponse.arrayBuffer())
+        const alexBrush = await pdfDoc.embedFont(fontBytes)
+
+        const size = Number(fontSize) || 48
+        const y = Number(nameY) || 308
+        const textWidth = alexBrush.widthOfTextAtSize(PREVIEW_NAME, size)
+
+        firstPage.drawText(PREVIEW_NAME, {
+          x: width / 2 - textWidth / 2,
+          y,
+          size,
+          font: alexBrush,
+          color: rgb(0, 0, 0),
+        })
+
+        const pdfBytes = await pdfDoc.save()
+        const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' })
+        const url = URL.createObjectURL(blob)
+
+        if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
+        previewUrlRef.current = url
+        setPreviewUrl(url)
+      } catch {
+        if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
+        previewUrlRef.current = null
+        setPreviewUrl(null)
+      } finally {
+        setPreviewLoading(false)
+      }
+    }, 400)
+
+    return () => clearTimeout(timeout)
+  }, [templateExists, nameY, fontSize])
+
+  // Revoke the preview object URL on unmount
+  useEffect(() => {
+    return () => {
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
     }
   }, [])
 
@@ -214,6 +290,7 @@ export default function SettingsPage() {
   const handleSave = async () => {
     setSaving(true)
     localStorage.setItem('cert_name_y', nameY)
+    localStorage.setItem('cert_name_size', fontSize)
     localStorage.setItem('selected_term', selectedTerm)
     localStorage.setItem('academic_year', academicYear)
     toast.success('Settings saved')
@@ -287,69 +364,112 @@ export default function SettingsPage() {
 
         {/* Certificate Settings */}
         <TabsContent value="certificates">
-          <Card className="p-6">
-            <h2 className="text-lg font-semibold mb-4">Certificate Settings</h2>
-            <div className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+            <Card className="p-6">
+              <h2 className="text-lg font-semibold mb-4">Certificate Settings</h2>
+              <div className="space-y-6">
 
-              {/* Template Upload */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Certificate Template (PDF)
-                </label>
-                {templateExists && (
-                  <div className="flex items-center gap-2 mb-3 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">
-                    <CheckCircle size={16} />
-                    <span>Template uploaded and ready</span>
+                {/* Template Upload */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Certificate Template (PDF)
+                  </label>
+                  {templateExists && (
+                    <div className="flex items-center gap-2 mb-3 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">
+                      <CheckCircle size={16} />
+                      <span>Template uploaded and ready</span>
+                    </div>
+                  )}
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+                    <Upload className="mx-auto h-12 w-12 text-gray-400" />
+                    <p className="mt-2 text-sm text-gray-600">
+                      Upload your Canva-designed certificate PDF
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      The student&apos;s name will be stamped on top at the position you configure below
+                    </p>
+                    <input
+                      ref={templateInputRef}
+                      type="file"
+                      accept=".pdf"
+                      className="hidden"
+                      onChange={handleTemplateUpload}
+                    />
+                    <Button
+                      variant="outline"
+                      className="mt-4"
+                      disabled={templateUploading}
+                      onClick={() => templateInputRef.current?.click()}
+                    >
+                      <Upload size={16} className="mr-2" />
+                      {templateUploading ? 'Uploading...' : templateExists ? 'Replace Template' : 'Upload Template'}
+                    </Button>
                   </div>
-                )}
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
-                  <Upload className="mx-auto h-12 w-12 text-gray-400" />
-                  <p className="mt-2 text-sm text-gray-600">
-                    Upload your Canva-designed certificate PDF
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    The student&apos;s name will be stamped on top at the position you configure below
-                  </p>
-                  <input
-                    ref={templateInputRef}
-                    type="file"
-                    accept=".pdf"
-                    className="hidden"
-                    onChange={handleTemplateUpload}
-                  />
-                  <Button
-                    variant="outline"
-                    className="mt-4"
-                    disabled={templateUploading}
-                    onClick={() => templateInputRef.current?.click()}
-                  >
-                    <Upload size={16} className="mr-2" />
-                    {templateUploading ? 'Uploading...' : templateExists ? 'Replace Template' : 'Upload Template'}
-                  </Button>
                 </div>
-              </div>
 
-              {/* Name Position */}
-              <div className="space-y-3">
-                <h3 className="font-medium">Name Position on Certificate</h3>
-                <p className="text-xs text-gray-500">
-                  The name is always horizontally centered at font size 48 (Alex Brush).
-                  Adjust the Y value (distance from the bottom of the page in points) until
-                  the name lands on the correct line of your template, then click Save Changes.
-                </p>
-                <div className="max-w-xs">
-                  <Input
-                    label="Y from bottom (points)"
-                    type="number"
-                    value={nameY}
-                    onChange={e => setNameY(e.target.value)}
-                    placeholder="350"
-                  />
+                {/* Name Position + Font Size */}
+                <div className="space-y-3">
+                  <h3 className="font-medium">Name Position on Certificate</h3>
+                  <p className="text-xs text-gray-500">
+                    The name is always horizontally centered (Alex Brush font). Adjust the Y value
+                    (distance from the bottom of the page in points) and the font size until the
+                    name lands correctly on your template — the preview on the right updates as you
+                    type. Click Save Changes to apply the new values to every certificate generated
+                    from now on.
+                  </p>
+                  <div className="flex flex-wrap gap-4">
+                    <div className="max-w-xs">
+                      <Input
+                        label="Y from bottom (points)"
+                        type="number"
+                        value={nameY}
+                        onChange={e => setNameY(e.target.value)}
+                        placeholder="350"
+                      />
+                    </div>
+                    <div className="max-w-xs">
+                      <Input
+                        label="Font size (points)"
+                        type="number"
+                        value={fontSize}
+                        onChange={e => setFontSize(e.target.value)}
+                        placeholder="48"
+                      />
+                    </div>
+                  </div>
                 </div>
-              </div>
 
-            </div>
-          </Card>
+              </div>
+            </Card>
+
+            {/* Live Preview */}
+            <Card className="p-6 lg:sticky lg:top-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold">Live Preview</h2>
+                {previewLoading && <span className="text-xs text-gray-400">Updating…</span>}
+              </div>
+              {!templateExists ? (
+                <div className="aspect-[842/595] rounded-lg border-2 border-dashed border-gray-200 flex items-center justify-center text-center px-6">
+                  <p className="text-sm text-gray-400">Upload a certificate template to see a live preview here.</p>
+                </div>
+              ) : previewUrl ? (
+                <iframe
+                  key={previewUrl}
+                  src={previewUrl}
+                  title="Certificate preview"
+                  className="w-full aspect-[842/595] rounded-lg border"
+                />
+              ) : (
+                <div className="aspect-[842/595] rounded-lg border-2 border-dashed border-gray-200 flex items-center justify-center">
+                  <p className="text-sm text-gray-400">Loading preview…</p>
+                </div>
+              )}
+              <p className="text-xs text-gray-400 mt-3">
+                Shown with a placeholder name (&quot;{PREVIEW_NAME}&quot;) so you can dial in the
+                position and size before generating a real certificate.
+              </p>
+            </Card>
+          </div>
         </TabsContent>
 
         {/* Attendance Settings */}

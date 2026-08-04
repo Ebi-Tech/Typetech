@@ -173,9 +173,9 @@ export default function CertificatesPage() {
       const fontBytes = new Uint8Array(await fontResponse.arrayBuffer())
       const alexBrush = await pdfDoc.embedFont(fontBytes)
 
-      const fontSize = 48
-      // Always center horizontally; Y is configurable from Settings > Certificates
-      // Default 308 = ~48% from top on the A4 landscape template (842×595 pts)
+      // Always center horizontally; Y and font size are configurable from Settings > Certificates
+      // Default Y 308 = ~48% from top on the A4 landscape template (842×595 pts)
+      const fontSize = Number(localStorage.getItem('cert_name_size') || 48)
       const nameY = Number(localStorage.getItem('cert_name_y') || 308)
       const textWidth = alexBrush.widthOfTextAtSize(studentName, fontSize)
 
