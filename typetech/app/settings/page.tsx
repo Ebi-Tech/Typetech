@@ -250,9 +250,7 @@ export default function SettingsPage() {
           y,
           size,
           font: alexBrush,
-          // Distinct blue (not black) so the live overlay is unmistakable even when
-          // it lands on top of template artwork that already has its own guide text
-          color: rgb(0.15, 0.39, 0.92),
+          color: rgb(0, 0, 0),
         })
 
         const pdfBytes = await pdfDoc.save()
@@ -528,9 +526,8 @@ export default function SettingsPage() {
                 </div>
               )}
               <p className="text-xs text-gray-400 mt-3">
-                Shown with a placeholder name (&quot;{PREVIEW_NAME}&quot;) in blue so you can dial in the
-                position and size before generating a real certificate. Real certificates stamp the
-                name in black.
+                Shown with a placeholder name (&quot;{PREVIEW_NAME}&quot;) in the same black used on real
+                certificates, so you can dial in the exact position and size before generating one.
               </p>
             </Card>
           </div>
