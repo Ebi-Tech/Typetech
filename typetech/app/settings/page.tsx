@@ -53,6 +53,8 @@ export default function SettingsPage() {
   // Bumped on every successful (re-)upload so the preview effect always refetches,
   // even when templateExists was already true (replacing an existing template)
   const [templateVersion, setTemplateVersion] = useState(0)
+  // Transient confirmation after a fresh upload — not a permanent "template exists" indicator
+  const [justUploaded, setJustUploaded] = useState(false)
   const [nameY, setNameY] = useState('308')
   const [fontSize, setFontSize] = useState('48')
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
@@ -288,22 +290,27 @@ export default function SettingsPage() {
 
     setTemplateUploading(true)
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-
-      const res = await fetch('/api/upload-template', {
-        method: 'POST',
-        body: formData,
-      })
-
+      // 1. Ask the server for a one-time signed upload URL (small JSON call, no file bytes —
+      // stays well under Vercel's 4.5MB serverless function body limit)
+      const res = await fetch('/api/upload-template', { method: 'POST' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || `Upload failed (${res.status})`)
+        throw new Error(data.error || `Failed to prepare upload (${res.status})`)
       }
+      const { path, token } = await res.json()
+
+      // 2. Upload the actual PDF bytes straight from the browser to Supabase Storage,
+      // bypassing our Vercel function (and its size limit) entirely
+      const { error: uploadError } = await supabase.storage
+        .from('certificates')
+        .uploadToSignedUrl(path, token, file, { contentType: 'application/pdf' })
+      if (uploadError) throw uploadError
 
       setTemplateExists(true)
       setTemplateVersion(v => v + 1)
       toast.success('Template uploaded successfully')
+      setJustUploaded(true)
+      setTimeout(() => setJustUploaded(false), 5000)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to upload template')
     } finally {
@@ -442,7 +449,7 @@ export default function SettingsPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Certificate Template (PDF)
                   </label>
-                  {templateExists && (
+                  {justUploaded && (
                     <div className="flex items-center gap-2 mb-3 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">
                       <CheckCircle size={16} />
                       <span>Template uploaded and ready</span>
