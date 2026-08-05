@@ -50,6 +50,9 @@ export default function SettingsPage() {
   const [requireMinAttendance, setRequireMinAttendance] = useState(false)
   const [templateUploading, setTemplateUploading] = useState(false)
   const [templateExists, setTemplateExists] = useState(false)
+  // Bumped on every successful (re-)upload so the preview effect always refetches,
+  // even when templateExists was already true (replacing an existing template)
+  const [templateVersion, setTemplateVersion] = useState(0)
   const [nameY, setNameY] = useState('308')
   const [fontSize, setFontSize] = useState('48')
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
@@ -270,7 +273,7 @@ export default function SettingsPage() {
     }, 400)
 
     return () => clearTimeout(timeout)
-  }, [templateExists, nameY, fontSize])
+  }, [templateExists, templateVersion, nameY, fontSize])
 
   // Revoke the preview object URL on unmount
   useEffect(() => {
@@ -293,12 +296,16 @@ export default function SettingsPage() {
         body: formData,
       })
 
-      if (!res.ok) throw new Error('Upload failed')
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || `Upload failed (${res.status})`)
+      }
 
       setTemplateExists(true)
+      setTemplateVersion(v => v + 1)
       toast.success('Template uploaded successfully')
-    } catch {
-      toast.error('Failed to upload template')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to upload template')
     } finally {
       setTemplateUploading(false)
       if (templateInputRef.current) templateInputRef.current.value = ''
@@ -507,7 +514,18 @@ export default function SettingsPage() {
             <Card className="p-6 lg:sticky lg:top-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold">Live Preview</h2>
-                {previewLoading && <span className="text-xs text-gray-400">Updating…</span>}
+                <div className="flex items-center gap-2">
+                  {previewLoading && <span className="text-xs text-gray-400">Updating…</span>}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setTemplateVersion(v => v + 1)}
+                    disabled={!templateExists || previewLoading}
+                    title="Force-refetch the template in case it was just replaced"
+                  >
+                    <RefreshCw size={14} className={previewLoading ? 'animate-spin' : ''} />
+                  </Button>
+                </div>
               </div>
               {!templateExists ? (
                 <div className="aspect-[842/595] rounded-lg border-2 border-dashed border-gray-200 flex items-center justify-center text-center px-6">
