@@ -190,22 +190,39 @@ export default function CertificatesPage() {
       const pdfBytes = await pdfDoc.save()
       const pdfBlob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' })
 
-      const formData = new FormData()
-      formData.append('file', pdfBlob, `${studentName.replace(/\s+/g, '_')}_Certificate.pdf`)
-      formData.append('studentId', studentId)
-      formData.append('studentName', studentName)
-
-      const res = await fetch('/api/upload-certificate', {
+      // Ask the API for a short-lived upload token, then send the PDF directly to
+      // Supabase Storage. This keeps the PDF out of the hosting proxy that returned 413.
+      const signResponse = await fetch('/api/upload-certificate', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'sign', studentId, studentName }),
       })
 
-      if (!res.ok) {
-        const { error } = await res.json()
-        throw new Error(error || 'Upload failed')
+      if (!signResponse.ok) {
+        const data = await signResponse.json().catch(() => ({}))
+        throw new Error(data.error || `Failed to prepare upload (${signResponse.status})`)
       }
 
-      const { url } = await res.json()
+      const { path, token } = await signResponse.json()
+      const { error: uploadError } = await supabase.storage
+        .from('certificates')
+        .uploadToSignedUrl(path, token, pdfBlob, { contentType: 'application/pdf' })
+
+      if (uploadError) throw uploadError
+
+      // Record the public URL only after Supabase confirms the file upload.
+      const confirmResponse = await fetch('/api/upload-certificate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'confirm', studentId, studentName }),
+      })
+
+      if (!confirmResponse.ok) {
+        const data = await confirmResponse.json().catch(() => ({}))
+        throw new Error(data.error || `Failed to save certificate (${confirmResponse.status})`)
+      }
+
+      const { url } = await confirmResponse.json()
 
       setCertificateStatus(prev => ({
         ...prev,
